@@ -10,11 +10,9 @@ on:
 
 permissions:
   contents: write
-
-# Same convention as the CI workflow — see ci.yml for context.
-env:
-  OSPCHAT_SHARED_REPO: ${{ vars.OSPCHAT_SHARED_REPO || format('{0}/ospchat-shared', github.repository_owner) }}
-  OSPCHAT_SHARED_REF: ${{ vars.OSPCHAT_SHARED_REF || 'main' }}
+  # Required so the workflow's GITHUB_TOKEN can pull ospchat-shared from
+  # GitHub Packages — even public packages require an authenticated GET.
+  packages: read
 
 jobs:
   package:
@@ -25,28 +23,19 @@ jobs:
         include:
           - os: ubuntu-latest
             target_ext: deb
-            installer_glob: ospchat-desktop/build/compose/binaries/main/deb/*.deb
+            installer_glob: build/compose/binaries/main/deb/*.deb
           - os: macos-latest
             target_ext: dmg
-            installer_glob: ospchat-desktop/build/compose/binaries/main/dmg/*.dmg
+            installer_glob: build/compose/binaries/main/dmg/*.dmg
           - os: windows-latest
             target_ext: msi
-            installer_glob: ospchat-desktop/build/compose/binaries/main/msi/*.msi
+            installer_glob: build/compose/binaries/main/msi/*.msi
 
     runs-on: ${{ matrix.os }}
 
     steps:
       - name: Checkout ospchat-desktop
         uses: actions/checkout@v4
-        with:
-          path: ospchat-desktop
-
-      - name: Checkout ospchat-shared
-        uses: actions/checkout@v4
-        with:
-          repository: ${{ env.OSPCHAT_SHARED_REPO }}
-          ref: ${{ env.OSPCHAT_SHARED_REF }}
-          path: ospchat-shared
 
       - name: Set up JDK 21
         uses: actions/setup-java@v4
@@ -59,17 +48,13 @@ jobs:
         with:
           gradle-version: '8.10.2'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          packages: 'platforms;android-35 build-tools;35.0.0'
-
-      - name: Publish ospchat-shared to mavenLocal
-        working-directory: ospchat-shared
-        run: gradle publishToMavenLocal --no-daemon
-
       - name: Package native installer
-        working-directory: ospchat-desktop
+        # GHP credentials are surfaced as Gradle properties so
+        # settings.gradle.kts can authenticate the ospchat-shared registry
+        # lookup.
+        env:
+          ORG_GRADLE_PROJECT_gprUser: ${{ github.actor }}
+          ORG_GRADLE_PROJECT_gprToken: ${{ secrets.GITHUB_TOKEN }}
         run: gradle :packageDistributionForCurrentOS --no-daemon
 
       - name: Upload installer artifact

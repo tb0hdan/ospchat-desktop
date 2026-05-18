@@ -1,26 +1,29 @@
 # OSPChat — Desktop
 
 Compose Multiplatform desktop client for OSPChat. Speaks the same wire
-protocol as [`ospchat-android`](../ospchat-android) and discovers Android
+protocol as [`ospchat-android`](https://github.com/tb0hdan/ospchat-android) and discovers Android
 peers on the same LAN via mDNS.
 
 ## Run
 
 ```bash
-# 1. Publish the shared module to mavenLocal first
-cd ../ospchat-shared
-gradle publishToMavenLocal
-
-# 2. Run the desktop app
-cd ../ospchat-desktop
 gradle run
 ```
 
-After any change in `ospchat-shared`, re-run step 1.
+The shared Kotlin module [`ospchat-shared`](https://github.com/tb0hdan/ospchat-shared)
+is consumed from the GitHub Packages Maven registry — same as
+[`ospchat-android`](https://github.com/tb0hdan/ospchat-android). Even for public packages GitHub
+requires an authenticated `GET`, so before the first build add a
+[Personal Access Token](https://github.com/settings/tokens) with the
+**`read:packages`** scope to your user-level `~/.gradle/gradle.properties`:
 
-(Long-term we'd prefer Gradle composite-build over mavenLocal, but two KMP
-builds in a composite hit a `BuildFusService` classloader conflict in Kotlin
-Gradle Plugin 2.0.x. mavenLocal is the pragmatic workaround.)
+```properties
+gprUser=your-github-username
+gprToken=ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+Alternatively export `GITHUB_ACTOR` and `GITHUB_TOKEN` in your shell —
+the build reads either source.
 
 ## Package
 
@@ -38,7 +41,7 @@ right output path for the detected host:
 | `make dist`       | Portable directory with bundled JRE (`build/compose/binaries/main/app/OSPChat/`) |
 | `make package`    | Native installer — `.deb` (Linux) / `.dmg` (mac) / `.msi` (win) |
 | `make uber-jar`   | Self-contained fat JAR (`build/compose/jars/`)              |
-| `make release`    | `shared-publish` then `package` — the canonical release flow |
+| `make release`    | `package` — the canonical release flow                      |
 | `make install-deb`| `sudo dpkg -i` the produced `.deb` (Linux only)             |
 | `make clean`      | gradle clean                                                |
 
@@ -118,8 +121,7 @@ Why: JmDNS' `close()` blocks ~5 s flushing mDNS goodbye records, and its backgro
 Two workflows under `.github/workflows/`:
 
 - **`ci.yml`** — every push / PR. Runs on a single `ubuntu-latest` runner:
-  publishes `ospchat-shared` to mavenLocal, runs the shared module's desktop
-  tests, compiles `ospchat-desktop`, builds the distributable
+  compiles `ospchat-desktop`, builds the distributable
   (`:createDistributable`) as a smoke check. Native installers are skipped on
   branch / PR runs.
 - **`release.yml`** — on tag push matching `v*` (e.g. `git tag v0.1.0 && git push origin v0.1.0`).
@@ -129,16 +131,10 @@ Two workflows under `.github/workflows/`:
   tag with all three attached. `generate_release_notes: true` builds the
   changelog from commit messages since the previous tag.
 
-Both workflows assume **`ospchat-shared` is a sibling GitHub repo** under the
-same owner (i.e. `github.com/${OWNER}/ospchat-shared`). To override:
-
-- **Different repo:** set the repo variable `OSPCHAT_SHARED_REPO` (e.g.
-  `myorg/private-shared`) under **Settings → Secrets and variables → Actions → Variables**.
-- **Different branch / ref:** set `OSPCHAT_SHARED_REF` (default `main`).
-
-If `ospchat-shared` is a *private* repo, add a `GH_PAT` secret with a PAT that
-has read access, and add `token: ${{ secrets.GH_PAT }}` to the second
-`actions/checkout@v4` step in each workflow.
+Both workflows authenticate to GitHub Packages with the workflow-provided
+`GITHUB_TOKEN` (surfaced as Gradle properties `gprUser` / `gprToken`) so
+the build can resolve `com.ospchat:ospchat-shared` from the registry. The
+job's `permissions:` block grants `packages: read` for this.
 
 ## Window-close behavior
 

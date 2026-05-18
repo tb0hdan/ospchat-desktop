@@ -1,8 +1,9 @@
 name: CI
 
-# Push/PR verification on a single Linux runner: publish ospchat-shared to
-# mavenLocal, then build + smoke-test the desktop module. Native installers
-# are only built on tag pushes — see `release.yml`.
+# Push/PR verification on a single Linux runner: build + smoke-test the
+# desktop module. ospchat-shared is consumed from GitHub Packages — no
+# sibling-repo checkout needed. Native installers are only built on tag
+# pushes — see `release.yml`.
 on:
   push:
     branches: ['**']
@@ -11,17 +12,13 @@ on:
 
 permissions:
   contents: read
+  # Required so the workflow's GITHUB_TOKEN can pull ospchat-shared from
+  # GitHub Packages — even public packages require an authenticated GET.
+  packages: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
-
-# Assumption: ospchat-shared lives in a sibling GitHub repo under the same
-# owner — i.e. github.com/${OWNER}/ospchat-shared. Override via the
-# OSPCHAT_SHARED_REPO repo variable if that's wrong.
-env:
-  OSPCHAT_SHARED_REPO: ${{ vars.OSPCHAT_SHARED_REPO || format('{0}/ospchat-shared', github.repository_owner) }}
-  OSPCHAT_SHARED_REF: ${{ vars.OSPCHAT_SHARED_REF || 'main' }}
 
 jobs:
   build:
@@ -31,15 +28,6 @@ jobs:
     steps:
       - name: Checkout ospchat-desktop
         uses: actions/checkout@v4
-        with:
-          path: ospchat-desktop
-
-      - name: Checkout ospchat-shared
-        uses: actions/checkout@v4
-        with:
-          repository: ${{ env.OSPCHAT_SHARED_REPO }}
-          ref: ${{ env.OSPCHAT_SHARED_REF }}
-          path: ospchat-shared
 
       - name: Set up JDK 21
         uses: actions/setup-java@v4
@@ -64,30 +52,22 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: gradle-${{ runner.os }}-${{ hashFiles('ospchat-shared/**/*.gradle*', 'ospchat-shared/**/libs.versions.toml', 'ospchat-desktop/**/*.gradle*', 'ospchat-desktop/**/libs.versions.toml') }}
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/libs.versions.toml') }}
           restore-keys: gradle-${{ runner.os }}-
 
-      - name: Set up Android SDK
-        # ospchat-shared targets `androidTarget` so it pulls AGP + Android
-        # SDK during configuration even when publishing only the JVM variants.
-        uses: android-actions/setup-android@v3
-        with:
-          packages: 'platforms;android-35 build-tools;35.0.0'
-
-      - name: Publish ospchat-shared to mavenLocal
-        working-directory: ospchat-shared
-        run: gradle publishToMavenLocal --no-daemon
-
-      - name: Run shared module tests
-        working-directory: ospchat-shared
-        run: gradle desktopTest --no-daemon
-
       - name: Compile ospchat-desktop
-        working-directory: ospchat-desktop
+        # GHP credentials are surfaced as Gradle properties so
+        # settings.gradle.kts can authenticate the ospchat-shared registry
+        # lookup.
+        env:
+          ORG_GRADLE_PROJECT_gprUser: ${{ github.actor }}
+          ORG_GRADLE_PROJECT_gprToken: ${{ secrets.GITHUB_TOKEN }}
         run: gradle :compileKotlinDesktop --no-daemon
 
       - name: Smoke-build distributable
         # Faster than full installer: validates jlink/jpackage runtime image
         # without spending time on the .deb packaging step.
-        working-directory: ospchat-desktop
+        env:
+          ORG_GRADLE_PROJECT_gprUser: ${{ github.actor }}
+          ORG_GRADLE_PROJECT_gprToken: ${{ secrets.GITHUB_TOKEN }}
         run: gradle :createDistributable --no-daemon

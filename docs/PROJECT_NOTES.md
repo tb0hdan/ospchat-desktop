@@ -71,20 +71,26 @@ Out of scope (deferred):
 | Notification surface    | `NoOpMessageNotifier` (system-tray notifications deferred)    |
 | Logging on desktop      | stderr `println` (actual of shared `Log`)                     |
 | Build tool              | Gradle 8.10.2 (pinned in CI; system Gradle locally is fine)   |
-| Shared-module flow      | mavenLocal — `gradle publishToMavenLocal` in `../ospchat-shared/` |
+| Shared-module flow      | GitHub Packages registry (same as `ospchat-android`) — needs `gprUser` / `gprToken` PAT with `read:packages` |
 | Application id          | `com.ospchat.desktop` (JVM main: `com.ospchat.desktop.MainKt`) |
 
-### Why mavenLocal and not Gradle composite-build
+### Why GitHub Packages and not Gradle composite-build
 
 Gradle's `includeBuild("../ospchat-shared")` hits a known **`BuildFusService`
 classloader conflict** in Kotlin Gradle Plugin 2.0.x when two KMP builds
 share a composite. The shared module's KGP instance and the desktop
 module's KGP instance can't share the same fully-shared service.
 
-The workaround — `gradle publishToMavenLocal` over in `ospchat-shared/` and
-consume `com.ospchat:ospchat-shared:0.1.0` from `~/.m2/repository/` — is one
-extra command per shared-module edit, with no downstream complications.
-Documented in `README.md` under "Run".
+The chosen workaround is the same one `ospchat-android` uses: consume
+`com.ospchat:ospchat-shared:0.1.0` from the GitHub Packages Maven registry
+(`https://maven.pkg.github.com/tb0hdan/ospchat-shared`). Even public
+packages require an authenticated `GET`, so the build reads either
+`gprUser` / `gprToken` Gradle properties or `GITHUB_ACTOR` /
+`GITHUB_TOKEN` env vars. Documented in `README.md` under "Run".
+
+This replaced an earlier mavenLocal flow (`gradle publishToMavenLocal`
+over in `ospchat-shared/`) once `ospchat-shared` started publishing
+releases to GitHub Packages.
 
 ## Architecture
 
@@ -128,7 +134,7 @@ Documented in `README.md` under "Run".
                              │
                              ▼
                     com.ospchat:ospchat-shared:0.1.0
-                       (via ~/.m2/repository)
+                  (via maven.pkg.github.com/tb0hdan/ospchat-shared)
 ```
 
 `AppContainer` owns every singleton for the process lifetime. `AppController`
@@ -210,15 +216,21 @@ ospchat-desktop/
   daemon cleanup thread + a non-daemon killer that joins with 800 ms
   deadline then `exitProcess(0)`. Avoids the ~5 s JmDNS `close()` block.
   Window menubar removed as redundant with tray + About → Exit.
-- 2026-05-18 — Makefile (`help`, `info`, `shared-publish`, `build`, `run`,
-  `dist`, `package`, `uber-jar`, `release`, `all`, `install-deb`, `clean`).
-  `make package` produces `ospchat_1.0.0_amd64.deb` (~100 MB w/ bundled JRE).
+- 2026-05-18 — Makefile (`help`, `info`, `build`, `run`, `dist`, `package`,
+  `uber-jar`, `release`, `all`, `install-deb`, `clean`). `make package`
+  produces `ospchat_1.0.0_amd64.deb` (~100 MB w/ bundled JRE).
 - 2026-05-18 — CI workflow (`ci.yml`): push/PR smoke on Linux runner —
-  publishes shared from a sibling checkout, runs shared's desktop tests,
-  compiles desktop, builds the distributable. Release workflow
+  compiles desktop and builds the distributable. Release workflow
   (`release.yml`): tag-push matrix on Linux/macOS/Windows, each builds its
   native installer + uploads as artifact; final job attaches all three
-  to a GitHub Release with auto-generated changelog.
+  to a GitHub Release with auto-generated changelog. Both workflows
+  authenticate to GitHub Packages via the runner's `GITHUB_TOKEN` to
+  resolve `ospchat-shared`.
+- 2026-05-18 — Switched shared-module resolution from mavenLocal to the
+  released `com.ospchat:ospchat-shared:0.1.0` artifact on GitHub Packages
+  (same as `ospchat-android`). Drops the `gradle publishToMavenLocal`
+  per-edit step and the sibling-checkout dance from CI. See
+  "Why GitHub Packages..." above.
 
 ## Known limitations
 
@@ -236,8 +248,9 @@ ospchat-desktop/
   from a desktop. (Android handles this via `androidx.exifinterface`.)
   Plug `metadata-extractor` in front of `ImageIoCompressor` when this
   becomes a real complaint.
-- **Composite-build vs mavenLocal:** see "Why mavenLocal..." above. Means
-  one extra `gradle publishToMavenLocal` cycle per shared edit.
+- **Composite-build vs GitHub Packages:** see "Why GitHub Packages..."
+  above. Means a published `ospchat-shared` release is required to pick up
+  shared-module changes (no `mavenLocal` short-circuit).
 - **No tests in this module yet.** Shared has 25 tests; desktop has 0.
   The shape of the desktop UI is largely UI-only and Compose UI tests on
   desktop are a known footgun (Skiko + headless).
@@ -262,9 +275,6 @@ ospchat-desktop/
    killer can interrupt a Room write if it lands at the wrong moment.
    Add a `database.runInTransaction { }` guard around message-sending
    batches if we ever start writing larger groups.
-6. **Pull the shared dep from GitHub Packages** instead of mavenLocal in
-   CI — gives release cadence independence between `ospchat-shared` and
-   the two clients. Local dev keeps mavenLocal.
-7. **`gradle/wrapper/`** committed — currently the Makefile depends on a
+6. **`gradle/wrapper/`** committed — currently the Makefile depends on a
    system Gradle. Bootstrap a wrapper to match `ospchat-android`'s
    convention.

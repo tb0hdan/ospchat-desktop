@@ -31,12 +31,11 @@ INSTALLER_EXT ?= unknown
 INSTALLER_DIR ?= build/compose/binaries/main/unknown
 
 GRADLE        ?= gradle
-SHARED_DIR    := ../ospchat-shared
 DIST_DIR      := build/compose/binaries/main/app
 UBER_JAR_DIR  := build/compose/jars
 
 .DEFAULT_GOAL := help
-.PHONY: help info build run shared-publish dist package uber-jar all release clean install-deb
+.PHONY: help info build run dist package uber-jar all release clean install-deb
 
 # ---- Help --------------------------------------------------------------------
 
@@ -57,13 +56,6 @@ info: ## Print detected host + output paths
 	@echo "Distributable   : $(DIST_DIR)"
 	@echo "Uber JAR dir    : $(UBER_JAR_DIR)"
 	@echo "Gradle command  : $(GRADLE)"
-	@echo "Shared module   : $(SHARED_DIR)"
-
-# ---- Shared module ----------------------------------------------------------
-
-shared-publish: ## Publish ospchat-shared to mavenLocal (re-run after editing shared)
-	@echo "==> Publishing ospchat-shared to mavenLocal"
-	cd $(SHARED_DIR) && $(GRADLE) publishToMavenLocal
 
 # ---- Dev iteration ----------------------------------------------------------
 
@@ -91,10 +83,9 @@ uber-jar: ## Self-contained fat JAR (still requires a JRE to run)
 
 # ---- Composite / release ----------------------------------------------------
 
-# Publish shared first so package always picks up the latest shared changes.
-release: shared-publish package ## Full release: publish shared + native installer
+release: package ## Full release: native installer
 
-all: shared-publish package uber-jar ## Build every artifact this host can produce
+all: package uber-jar ## Build every artifact this host can produce
 
 # ---- Convenience ------------------------------------------------------------
 
@@ -111,7 +102,7 @@ else
 	@exit 1
 endif
 
-clean: ## gradle clean (does not affect mavenLocal)
+clean: ## gradle clean
 	$(GRADLE) clean
 
 tag:

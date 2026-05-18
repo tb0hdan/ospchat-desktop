@@ -10,16 +10,31 @@ pluginManagement {
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.PREFER_PROJECT)
     repositories {
-        mavenLocal()
         google()
         mavenCentral()
         maven("https://maven.pkg.jetbrains.space/public/p/compose/dev")
+        // ospchat-shared is consumed from GitHub Packages. Even public
+        // packages require auth: set `gprUser` + `gprToken` in
+        // ~/.gradle/gradle.properties (token = a PAT with `read:packages`),
+        // or export GITHUB_ACTOR + GITHUB_TOKEN. Mirrors the publishing
+        // block in ../ospchat-shared/build.gradle.kts and the consumer
+        // setup in ../ospchat-android/settings.gradle.kts.
+        maven {
+            name = "GitHubPackagesOspChatShared"
+            url = uri("https://maven.pkg.github.com/tb0hdan/ospchat-shared")
+            credentials {
+                username =
+                    (settings.providers.gradleProperty("gprUser").orNull)
+                        ?: System.getenv("GITHUB_ACTOR")
+                password =
+                    (settings.providers.gradleProperty("gprToken").orNull)
+                        ?: System.getenv("GITHUB_TOKEN")
+            }
+            content {
+                includeGroup("com.ospchat")
+            }
+        }
     }
 }
-
-// ospchat-shared is consumed from mavenLocal. After any change in
-// ospchat-shared, run `gradle publishToMavenLocal` over there to refresh the
-// artifact. Composite-build would be cleaner but currently hits a KGP
-// BuildFusService classloader conflict between two KMP builds.
 
 rootProject.name = "ospchat-desktop"
