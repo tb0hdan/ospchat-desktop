@@ -1,0 +1,270 @@
+# OSPChat — Desktop project notes
+
+## Overview
+
+OSPChat Desktop is a Compose Multiplatform (JVM) client that speaks the
+same wire protocol as [`ospchat-android`](../../ospchat-android). Both apps
+discover each other on the same LAN via mDNS / DNS-SD (`_ospchat._tcp.`)
+and exchange messages peer-to-peer over embedded HTTP servers — no central
+server, no internet required.
+
+Almost all non-UI code (DTOs, Room data layer, identity store, mDNS
+discovery, embedded Ktor server + client, attachment + avatar stores, every
+repository and use case) lives in a sibling [`ospchat-shared`](../../ospchat-shared)
+Kotlin Multiplatform module that both clients consume. The desktop module
+contributes: the Compose Desktop UI, a manual `AppContainer` DI graph, a
+JmDNS-backed implementation of the shared `PeerDiscoveryService`, an
+`ImageIO`-backed `ImageCompressor`, and host-aware lifecycle plumbing (tray
+icon, sub-second shutdown).
+
+## Scope
+
+In scope:
+
+- Three-tab shell (NavigationRail): **Contacts** / **Groups** / **About**.
+- First-run nickname prompt; nickname persisted via DataStore.
+- mDNS discovery of LAN peers via JmDNS; reflects live snapshot joined
+  with the local Room copy.
+- Text messaging (send + receive) with delivery status pipeline.
+- Image attachments: file picker → JPEG compression → wire transfer →
+  inline rendering via Skia decode.
+- Reactions: long-press a bubble, pick an emoji, chips toggle.
+- Group chats and broadcast channels with mesh-direct posting +
+  catch-up sync on re-discovery.
+- Group creation from the desktop UI with member multi-select.
+- Avatar UI: deterministic initials avatar per peer + custom-avatar
+  picker that propagates via `/v1/notify-refresh`.
+- System tray icon (where the desktop environment supports it) with
+  Show / Hide / Exit; window-close behaviour adapts (hide-to-tray if a
+  tray exists, full exit otherwise).
+- Sub-second shutdown despite JmDNS' slow `close()`.
+- Native installer per host OS via `compose.desktop.application` → `jpackage`:
+  `.deb` on Linux, `.dmg` on macOS, `.msi` on Windows.
+
+Out of scope (deferred):
+
+- TLS / authenticated handshake (still TOFU, LAN-only — same as Android).
+- Encryption at rest.
+- Message editing / deletion (no tombstones).
+- Voice notes / arbitrary file attachments (images only).
+- Multi-network discovery (Tailscale, multiple interfaces).
+- Window menubar with shortcuts (intentionally removed as redundant once
+  tray + About → Exit existed).
+
+## Tech choices
+
+| Decision                | Choice                                                        |
+| ----------------------- | ------------------------------------------------------------- |
+| UI framework            | Compose Multiplatform 1.7.3 (JVM target)                      |
+| Language                | Kotlin 2.0.21                                                 |
+| JVM target              | 17 (built with JDK 21, `jvmTarget = JvmTarget.JVM_17`)        |
+| DI                      | Manual `AppContainer` — no DI framework on desktop            |
+| Routing                 | Sealed `Screen` + tab enum, `mutableStateOf` in `MainRoot`    |
+| Persistence             | Room 2.7 KMP via `ospchat-shared` (`OspChatDatabase`, 9 migrations) |
+| Identity store          | `androidx.datastore:datastore-preferences-core` (multiplatform) |
+| HTTP                    | Ktor 2.3.13 client + server (CIO engine), shared with Android |
+| Wire protocol           | OpenAPI 0.8.0, `_ospchat._tcp.` mDNS                          |
+| mDNS                    | JmDNS 3.5.9 (desktop actual of shared `PeerDiscoveryService`) |
+| Image decode/encode     | `javax.imageio` (compressor) + Skia via `org.jetbrains.skia.Image.makeFromEncoded` (display) |
+| Concurrency dispatcher  | `Dispatchers.Swing` for the AWT UI thread                     |
+| Packaging               | `compose.desktop` → `jpackage` (host-bound: deb/dmg/msi only) |
+| Notification surface    | `NoOpMessageNotifier` (system-tray notifications deferred)    |
+| Logging on desktop      | stderr `println` (actual of shared `Log`)                     |
+| Build tool              | Gradle 8.10.2 (pinned in CI; system Gradle locally is fine)   |
+| Shared-module flow      | mavenLocal — `gradle publishToMavenLocal` in `../ospchat-shared/` |
+| Application id          | `com.ospchat.desktop` (JVM main: `com.ospchat.desktop.MainKt`) |
+
+### Why mavenLocal and not Gradle composite-build
+
+Gradle's `includeBuild("../ospchat-shared")` hits a known **`BuildFusService`
+classloader conflict** in Kotlin Gradle Plugin 2.0.x when two KMP builds
+share a composite. The shared module's KGP instance and the desktop
+module's KGP instance can't share the same fully-shared service.
+
+The workaround — `gradle publishToMavenLocal` over in `ospchat-shared/` and
+consume `com.ospchat:ospchat-shared:0.1.0` from `~/.m2/repository/` — is one
+extra command per shared-module edit, with no downstream complications.
+Documented in `README.md` under "Run".
+
+## Architecture
+
+```
+                  ┌──────────────────────────────────────────────────┐
+                  │                  Compose Window                  │
+                  │  ┌──────────────┐                                │
+                  │  │ NicknameScreen │  (first run only)            │
+                  │  └──────┬───────┘                                │
+                  │         │                                        │
+                  │  ┌──────▼───────────┐    ┌──────────────────┐    │
+                  │  │   MainShell      │ ▶  │   ChatScreen     │    │
+                  │  │ NavigationRail:  │ ▶  │   GroupChatScreen│    │
+                  │  │ Contacts/Groups/ │    │   PeerInfoDialog │    │
+                  │  │ About            │    │   CreateGroupDlg │    │
+                  │  └──────┬───────────┘    └──────────────────┘    │
+                  │         ▼                                        │
+                  │   AppController (lifecycle + send / mark-read /  │
+                  │     react / create-group / set-avatar / exit)    │
+                  └──────────┬───────────────────────────────────────┘
+                             │
+              ┌──────────────▼─────────────────────────────┐
+              │            AppContainer (manual DI)        │
+              │                                            │
+              │  HttpClient (Ktor CIO)                     │
+              │  ospChatDatabase()  ─── Room 2.7 KMP       │
+              │  createIdentityDataStore()                 │
+              │  FileAttachmentStore / FileAvatarStore     │
+              │  ImageIoCompressor                         │
+              │  JmDnsPeerDiscovery  ── PeerDiscoveryService│
+              │  DiscoveryRepository                       │
+              │  IdentityRepository / PeerRepository /     │
+              │   ReactionRepository / MessageRepository / │
+              │   GroupRepository / GroupMessageRepository │
+              │   / GroupSyncer / GroupBroadcaster /       │
+              │   PeerAvatarSync / PeerInfoNotifier        │
+              │  MessageClient                             │
+              │  MessageServer  (Ktor CIO, /v1/*)          │
+              │  NoOpMessageNotifier                       │
+              └────────────────────────────────────────────┘
+                             │
+                             ▼
+                    com.ospchat:ospchat-shared:0.1.0
+                       (via ~/.m2/repository)
+```
+
+`AppContainer` owns every singleton for the process lifetime. `AppController`
+sits between the Compose tree and the container, holding lifecycle state
+(`running`, `boundPort`) and exposing imperative actions (`start`, `sendText`,
+`sendGroupText`, `markPeerRead`, `markGroupRead`, `reactToMessage`,
+`createGroup`, `setSelfAvatar`, `clearSelfAvatar`, `shutdown`). Compose
+screens collect `Flow`s straight from `container.<repo>.observe…()` via
+`collectAsState`.
+
+## Repository layout
+
+```
+ospchat-desktop/
+├── .editorconfig                              (inherited convention)
+├── .github/workflows/
+│   ├── ci.yml                                 push/PR: compile + distributable smoke
+│   └── release.yml                            tag push: matrix-builds .deb/.dmg/.msi
+├── Makefile                                   build / run / dist / package / uber-jar / release / clean
+├── README.md                                  user-facing instructions
+├── settings.gradle.kts                        mavenLocal in dep-resolution repos
+├── build.gradle.kts                           compose.desktop + KMP plugins
+├── gradle.properties
+├── gradle/libs.versions.toml
+├── docs/
+│   └── PROJECT_NOTES.md                       (this file)
+└── src/desktopMain/
+    ├── kotlin/com/ospchat/desktop/
+    │   ├── Main.kt                            application{} entry, Tray, Window, AppRoot
+    │   ├── AppContainer.kt                    manual DI singletons
+    │   ├── AppController.kt                   lifecycle + imperative actions
+    │   └── ui/
+    │       ├── Screens.kt                     sealed Screen + Tab enum
+    │       ├── MainShell.kt                   NavigationRail + tab dispatch
+    │       ├── NicknameScreen.kt              first-run prompt
+    │       ├── PeersScreen.kt                 contacts + visible peers, right-click menu
+    │       ├── PeerInfoDialog.kt              UUID / status / address + nickname history
+    │       ├── ChatScreen.kt                  bubbles, reactions, image picker
+    │       ├── GroupsScreen.kt                live group list + FAB
+    │       ├── CreateGroupDialog.kt           name / kind / member picker
+    │       ├── GroupChatScreen.kt             group bubbles + broadcast send guard
+    │       ├── AboutScreen.kt                 nickname / version / port / avatar / exit
+    │       ├── Avatar.kt                      initials avatar + file-image fallback
+    │       └── FileImage.kt                   async Skia-decoded local file → Compose ImageBitmap
+    └── resources/                             (none yet)
+```
+
+## Current status
+
+- 2026-05-18 — Scaffolded the Gradle project (Compose Multiplatform 1.7.3,
+  Kotlin 2.0.21, JVM 17 bytecode). Established the `AppContainer` + manual
+  DI pattern; first window opened.
+- 2026-05-18 — `AppController` lifecycle: starts MessageServer + JmDNS
+  advertise once a nickname is set; persists newly-seen peers via
+  `PeerRepository.recordSeen`.
+- 2026-05-18 — Three-tab NavigationRail shell (Contacts / Groups / About)
+  with peer list, chat screen, and About (nickname edit, version, bound
+  port, exit). Replaced an earlier flat layout.
+- 2026-05-18 — Group support: clicking a row navigates to `GroupChatScreen`;
+  broadcast channels gate the input for non-creators. FAB on the Groups
+  tab opens `CreateGroupDialog` with name + kind toggle + member multi-select.
+- 2026-05-18 — Long-press peer rows for Add/Remove from contacts + Info
+  dialog; `PeerInfoDialog` surfaces UUID, status, full address + nickname
+  history from the Room `peer_addresses` / `peer_nicknames` tables.
+- 2026-05-18 — Image attachments: AWT `FileDialog` picks an image, bytes
+  flow through the shared `ImageCompressor` (`ImageIoCompressor` actual)
+  and `AttachmentStore`. Inbound bubbles render inline via `FileImage`
+  (Skia decode on `Dispatchers.IO`).
+- 2026-05-18 — Reactions: long-press bubble → `EmojiPickerDialog` (12 emoji),
+  reaction chips display under bubbles, tap toggles.
+- 2026-05-18 — Avatars: deterministic initials avatar (per-UUID 16-color
+  palette, same hash as Android so peers' bubble colours match cross-client).
+  Custom avatar picker in About (SHA-256, `AvatarStore.writeSelf`, peers
+  notified via `PeerInfoNotifier.broadcastRefresh`).
+- 2026-05-18 — System tray + adaptive close: `isTraySupported`-gated `Tray`
+  with Show / Hide / Exit; window-close X hides to tray on KDE/Mac/Win,
+  full-exits on GNOME-Wayland (no tray indicator).
+- 2026-05-18 — Sub-second shutdown: `AppController.shutdown` spawns a
+  daemon cleanup thread + a non-daemon killer that joins with 800 ms
+  deadline then `exitProcess(0)`. Avoids the ~5 s JmDNS `close()` block.
+  Window menubar removed as redundant with tray + About → Exit.
+- 2026-05-18 — Makefile (`help`, `info`, `shared-publish`, `build`, `run`,
+  `dist`, `package`, `uber-jar`, `release`, `all`, `install-deb`, `clean`).
+  `make package` produces `ospchat_1.0.0_amd64.deb` (~100 MB w/ bundled JRE).
+- 2026-05-18 — CI workflow (`ci.yml`): push/PR smoke on Linux runner —
+  publishes shared from a sibling checkout, runs shared's desktop tests,
+  compiles desktop, builds the distributable. Release workflow
+  (`release.yml`): tag-push matrix on Linux/macOS/Windows, each builds its
+  native installer + uploads as artifact; final job attaches all three
+  to a GitHub Release with auto-generated changelog.
+
+## Known limitations
+
+- **Tray support is platform-dependent.** GNOME-Wayland without
+  AppIndicator extensions has no tray; we fall back to "X closes the app"
+  but lose the show/hide affordance.
+- **No system-tray notifications.** `MessageNotifier` is `NoOp` on desktop;
+  incoming messages don't fire OS-level notifications. (DND, focus rules
+  would need to live here too.) Tracked for v0.2.
+- **Self-avatar UI is in About only.** No drag-and-drop, no crop UI; the
+  picker accepts JPEG / PNG / WEBP and the shared compressor scales to
+  256 px on the longest edge.
+- **EXIF rotation not applied on desktop** image attachments. Phone JPEGs
+  with rotation tags will render in their stored orientation when picked
+  from a desktop. (Android handles this via `androidx.exifinterface`.)
+  Plug `metadata-extractor` in front of `ImageIoCompressor` when this
+  becomes a real complaint.
+- **Composite-build vs mavenLocal:** see "Why mavenLocal..." above. Means
+  one extra `gradle publishToMavenLocal` cycle per shared edit.
+- **No tests in this module yet.** Shared has 25 tests; desktop has 0.
+  The shape of the desktop UI is largely UI-only and Compose UI tests on
+  desktop are a known footgun (Skiko + headless).
+- **`packageVersion = "1.0.0"`** in `compose.desktop.application` — jpackage
+  rejects `0.x` versions because MAJOR must be > 0. Project version stays
+  `0.1.0` in Gradle; only the installer metadata fakes `1.0.0`.
+
+## Suggested next steps
+
+1. **System-tray notifications.** Switch `MessageNotifier` to a desktop impl
+   using AWT `SystemTray.getSystemTray().add(TrayIcon).displayMessage(...)`
+   on supported platforms; respect active-chat suppression like Android.
+2. **Compose Desktop UI tests.** A minimal smoke covering nickname-prompt
+   → peer-list dispatch would catch regressions in `AppController`
+   wiring without needing a real Skiko renderer (test the controller
+   directly, then a couple of UI tests via `runComposeUiTest`).
+3. **EXIF on desktop** via `metadata-extractor` so phone-photographed
+   attachments render upright.
+4. **Drag-and-drop image attach** into ChatScreen (AWT drop target →
+   `controller.sendImageAttachment`).
+5. **Crash-safe shutdown for in-flight DB transactions.** Today's 800 ms
+   killer can interrupt a Room write if it lands at the wrong moment.
+   Add a `database.runInTransaction { }` guard around message-sending
+   batches if we ever start writing larger groups.
+6. **Pull the shared dep from GitHub Packages** instead of mavenLocal in
+   CI — gives release cadence independence between `ospchat-shared` and
+   the two clients. Local dev keeps mavenLocal.
+7. **`gradle/wrapper/`** committed — currently the Makefile depends on a
+   system Gradle. Bootstrap a wrapper to match `ospchat-android`'s
+   convention.

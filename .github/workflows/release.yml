@@ -1,0 +1,104 @@
+name: Release
+
+# On tag push (e.g. `v0.1.0`), matrix-build native installers on Linux,
+# macOS, and Windows and attach all three to a GitHub Release named after
+# the tag. jpackage only produces installers for its host OS, so the
+# matrix is mandatory.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+# Same convention as the CI workflow — see ci.yml for context.
+env:
+  OSPCHAT_SHARED_REPO: ${{ vars.OSPCHAT_SHARED_REPO || format('{0}/ospchat-shared', github.repository_owner) }}
+  OSPCHAT_SHARED_REF: ${{ vars.OSPCHAT_SHARED_REF || 'main' }}
+
+jobs:
+  package:
+    name: package (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target_ext: deb
+            installer_glob: ospchat-desktop/build/compose/binaries/main/deb/*.deb
+          - os: macos-latest
+            target_ext: dmg
+            installer_glob: ospchat-desktop/build/compose/binaries/main/dmg/*.dmg
+          - os: windows-latest
+            target_ext: msi
+            installer_glob: ospchat-desktop/build/compose/binaries/main/msi/*.msi
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout ospchat-desktop
+        uses: actions/checkout@v4
+        with:
+          path: ospchat-desktop
+
+      - name: Checkout ospchat-shared
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.OSPCHAT_SHARED_REPO }}
+          ref: ${{ env.OSPCHAT_SHARED_REF }}
+          path: ospchat-shared
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platforms;android-35 build-tools;35.0.0'
+
+      - name: Publish ospchat-shared to mavenLocal
+        working-directory: ospchat-shared
+        run: gradle publishToMavenLocal --no-daemon
+
+      - name: Package native installer
+        working-directory: ospchat-desktop
+        run: gradle :packageDistributionForCurrentOS --no-daemon
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ospchat-${{ matrix.target_ext }}
+          path: ${{ matrix.installer_glob }}
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: Publish GitHub Release
+    needs: package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all installer artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Inspect downloaded artifacts
+        run: ls -lR artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/ospchat-deb/*.deb
+            artifacts/ospchat-dmg/*.dmg
+            artifacts/ospchat-msi/*.msi
+          generate_release_notes: true
+          fail_on_unmatched_files: true
