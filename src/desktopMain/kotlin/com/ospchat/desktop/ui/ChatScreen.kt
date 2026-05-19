@@ -26,7 +26,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AttachFile
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -34,8 +33,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -63,10 +62,18 @@ fun ChatScreen(
     onSend: (String) -> Unit,
     onSendAttachment: (bytes: ByteArray) -> Unit,
     onReact: (Message, String?) -> Unit,
+    onVisible: () -> Unit = {},
+    onHidden: () -> Unit = {},
 ) {
     var draft by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
     var emojiTarget by remember { mutableStateOf<Message?>(null) }
+    var showComposerEmoji by remember { mutableStateOf(false) }
+
+    DisposableEffect(peer.uuid) {
+        onVisible()
+        onDispose { onHidden() }
+    }
 
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
@@ -140,16 +147,26 @@ fun ChatScreen(
                 draft = ""
             },
             onAttachImage = { bytes -> onSendAttachment(bytes) },
+            onEmojiClick = { showComposerEmoji = true },
         )
     }
 
     emojiTarget?.let { target ->
         EmojiPickerDialog(
+            title = "React",
             onDismiss = { emojiTarget = null },
             onPick = { emoji ->
                 onReact(target, emoji)
                 emojiTarget = null
             },
+        )
+    }
+
+    if (showComposerEmoji) {
+        EmojiPickerDialog(
+            title = "Insert emoji",
+            onDismiss = { showComposerEmoji = false },
+            onPick = { emoji -> draft += emoji },
         )
     }
 }
@@ -160,6 +177,7 @@ private fun ChatComposer(
     onDraftChange: (String) -> Unit,
     onSend: (String) -> Unit,
     onAttachImage: (ByteArray) -> Unit,
+    onEmojiClick: () -> Unit,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(8.dp),
@@ -171,6 +189,9 @@ private fun ChatComposer(
             if (bytes != null) onAttachImage(bytes)
         }) {
             Icon(Icons.Filled.AttachFile, contentDescription = "Attach image")
+        }
+        IconButton(onClick = onEmojiClick) {
+            Text("😊", style = MaterialTheme.typography.titleLarge)
         }
         OutlinedTextField(
             value = draft,
@@ -325,42 +346,3 @@ private fun ReactionChips(
     }
 }
 
-@Composable
-private fun EmojiPickerDialog(
-    onDismiss: () -> Unit,
-    onPick: (String) -> Unit,
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-        title = { Text("React") },
-        text = {
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                EMOJI_CHOICES.forEach { emoji ->
-                    Surface(
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.surfaceVariant,
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .combinedClickable(onClick = { onPick(emoji) }, onLongClick = {})
-                                .padding(horizontal = 10.dp, vertical = 6.dp),
-                        ) {
-                            Text(emoji, style = MaterialTheme.typography.titleMedium)
-                        }
-                    }
-                }
-            }
-        },
-    )
-}
-
-private val EMOJI_CHOICES =
-    listOf(
-        "👍", "❤️", "😂", "😮",
-        "😢", "🙏", "🔥", "🎉",
-        "😎", "🤔", "👏", "💯",
-    )

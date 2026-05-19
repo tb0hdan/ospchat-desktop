@@ -60,6 +60,7 @@ kotlin {
                 implementation(libs.ktor.client.content.negotiation)
                 implementation(libs.ktor.serialization.kotlinx.json)
                 implementation(libs.slf4j.nop)
+                implementation(libs.metadata.extractor)
             }
         }
     }

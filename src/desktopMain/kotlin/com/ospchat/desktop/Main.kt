@@ -20,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Notification
 import androidx.compose.ui.window.Tray
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
@@ -50,6 +51,19 @@ fun main() = application {
 
     val trayState = rememberTrayState()
     val trayPainter = rememberVectorPainter(Icons.Filled.Forum)
+
+    // Plumb the Compose tray into the notifier. The notifier is constructed
+    // inside AppContainer before any Compose state exists; here we hand it a
+    // callback so inbound messages can surface as tray notifications.
+    LaunchedEffect(trayState) {
+        if (isTraySupported) {
+            container.messageNotifier.sender = { title, body ->
+                trayState.sendNotification(
+                    Notification(title = title, message = body, type = Notification.Type.Info),
+                )
+            }
+        }
+    }
 
     val exitFully = {
         // UI dismisses instantly; backend cleanup runs in a daemon thread and
@@ -222,6 +236,8 @@ private fun MainRoot(
                 onReact = { message, emoji ->
                     uiScope.launch { controller.reactToMessage(current.peer, message.id, emoji) }
                 },
+                onVisible = { controller.onPeerChatVisible(current.peer.uuid) },
+                onHidden = { controller.onPeerChatHidden(current.peer.uuid) },
             )
         }
         is Screen.GroupChat -> {
@@ -242,6 +258,8 @@ private fun MainRoot(
                     messages = messages,
                     onBack = { screen = Screen.Main },
                     onSend = { body -> controller.sendGroupText(current.groupId, body) },
+                    onVisible = { controller.onGroupChatVisible(current.groupId) },
+                    onHidden = { controller.onGroupChatHidden(current.groupId) },
                 )
             }
         }

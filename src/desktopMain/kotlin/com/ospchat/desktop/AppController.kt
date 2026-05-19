@@ -84,6 +84,30 @@ class AppController(
         }
     }
 
+    /**
+     * Mark the chat with [peerUuid] as on-screen so the notifier suppresses
+     * incoming pings for that conversation. Pair with [onPeerChatHidden].
+     */
+    fun onPeerChatVisible(peerUuid: String) {
+        container.activeChatTracker.activePeerUuid = peerUuid
+    }
+
+    fun onPeerChatHidden(peerUuid: String) {
+        if (container.activeChatTracker.activePeerUuid == peerUuid) {
+            container.activeChatTracker.activePeerUuid = null
+        }
+    }
+
+    fun onGroupChatVisible(groupId: String) {
+        container.activeChatTracker.activeGroupId = groupId
+    }
+
+    fun onGroupChatHidden(groupId: String) {
+        if (container.activeChatTracker.activeGroupId == groupId) {
+            container.activeChatTracker.activeGroupId = null
+        }
+    }
+
     /** Mark all unread group messages as read up to now. */
     fun markGroupRead(groupId: String) {
         scope.launch {

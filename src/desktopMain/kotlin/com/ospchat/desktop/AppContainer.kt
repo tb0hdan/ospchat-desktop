@@ -1,9 +1,10 @@
 package com.ospchat.desktop
 
+import com.ospchat.desktop.attachments.ExifAwareImageCompressor
+import com.ospchat.desktop.notifications.DesktopMessageNotifier
 import com.ospchat.shared.data.attachments.AttachmentStore
 import com.ospchat.shared.data.attachments.FileAttachmentStore
 import com.ospchat.shared.data.attachments.ImageCompressor
-import com.ospchat.shared.data.attachments.ImageIoCompressor
 import com.ospchat.shared.data.avatar.AvatarStore
 import com.ospchat.shared.data.avatar.FileAvatarStore
 import com.ospchat.shared.data.db.OspChatDatabase
@@ -25,7 +26,7 @@ import com.ospchat.shared.data.reactions.ReactionRepository
 import com.ospchat.shared.domain.groups.GroupBroadcaster
 import com.ospchat.shared.net.client.MessageClient
 import com.ospchat.shared.net.server.MessageServer
-import com.ospchat.shared.notifications.NoOpMessageNotifier
+import com.ospchat.shared.notifications.ActiveChatTracker
 import com.ospchat.shared.platform.dataDir
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
@@ -38,8 +39,8 @@ import io.ktor.serialization.kotlinx.json.json
  * in commonMain), so each binding is a straight call into the appropriate
  * factory.
  *
- * Notification surface is intentionally [NoOpMessageNotifier] for v1 — system-tray
- * notifications on Linux/Mac/Win are a follow-up.
+ * Notification surface is [DesktopMessageNotifier]; its [sender] callback is
+ * wired by `Main` once the Compose `TrayState` is available.
  */
 class AppContainer {
     // --- Platform infra -----------------------------------------------------
@@ -57,7 +58,12 @@ class AppContainer {
 
     val attachmentStore: AttachmentStore = FileAttachmentStore(parentDir = dataDir())
     val avatarStore: AvatarStore = FileAvatarStore(parentDir = dataDir())
-    val imageCompressor: ImageCompressor = ImageIoCompressor()
+    val imageCompressor: ImageCompressor = ExifAwareImageCompressor()
+
+    // --- Notifications ------------------------------------------------------
+
+    val activeChatTracker = ActiveChatTracker()
+    val messageNotifier = DesktopMessageNotifier(activeChatTracker)
 
     // --- Discovery ----------------------------------------------------------
 
@@ -100,7 +106,7 @@ class AppContainer {
             peerDao = database.peerDao(),
             client = messageClient,
             identityRepository = identityRepository,
-            notifier = NoOpMessageNotifier,
+            notifier = messageNotifier,
             attachmentStore = attachmentStore,
             attachmentCompressor = imageCompressor,
         )
@@ -124,7 +130,7 @@ class AppContainer {
             identityRepository = identityRepository,
             discoveryRepository = discoveryRepository,
             groupRepository = groupRepository,
-            notifier = NoOpMessageNotifier,
+            notifier = messageNotifier,
         )
     }
 

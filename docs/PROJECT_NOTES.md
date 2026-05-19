@@ -65,10 +65,11 @@ Out of scope (deferred):
 | HTTP                    | Ktor 2.3.13 client + server (CIO engine), shared with Android |
 | Wire protocol           | OpenAPI 0.8.0, `_ospchat._tcp.` mDNS                          |
 | mDNS                    | JmDNS 3.5.9 (desktop actual of shared `PeerDiscoveryService`) |
-| Image decode/encode     | `javax.imageio` (compressor) + Skia via `org.jetbrains.skia.Image.makeFromEncoded` (display) |
+| Image decode/encode     | `javax.imageio` + `metadata-extractor` (EXIF orientation baked in) + Skia via `org.jetbrains.skia.Image.makeFromEncoded` (display) |
 | Concurrency dispatcher  | `Dispatchers.Swing` for the AWT UI thread                     |
 | Packaging               | `compose.desktop` → `jpackage` (host-bound: deb/dmg/msi only) |
-| Notification surface    | `NoOpMessageNotifier` (system-tray notifications deferred)    |
+| Notification surface    | `DesktopMessageNotifier` → Compose `TrayState.sendNotification`; active-chat suppression via shared `ActiveChatTracker` |
+| Emoji picker            | Tabbed picker over the Android `emoji2-emojipicker` 1.5.0 dataset (10 categories, ~1,889 base glyphs vendored as CSVs in `resources/emoji/`) |
 | Logging on desktop      | stderr `println` (actual of shared `Log`)                     |
 | Build tool              | Gradle 8.10.2 (pinned in CI; system Gradle locally is fine)   |
 | Shared-module flow      | GitHub Packages registry (same as `ospchat-android`) — needs `gprUser` / `gprToken` PAT with `read:packages` |
@@ -166,20 +167,27 @@ ospchat-desktop/
     │   ├── Main.kt                            application{} entry, Tray, Window, AppRoot
     │   ├── AppContainer.kt                    manual DI singletons
     │   ├── AppController.kt                   lifecycle + imperative actions
+    │   ├── attachments/
+    │   │   └── ExifAwareImageCompressor.kt    EXIF Orientation → AffineTransform pipeline
+    │   ├── notifications/
+    │   │   └── DesktopMessageNotifier.kt      MessageNotifier → TrayState.sendNotification
     │   └── ui/
     │       ├── Screens.kt                     sealed Screen + Tab enum
     │       ├── MainShell.kt                   NavigationRail + tab dispatch
     │       ├── NicknameScreen.kt              first-run prompt
     │       ├── PeersScreen.kt                 contacts + visible peers, right-click menu
     │       ├── PeerInfoDialog.kt              UUID / status / address + nickname history
-    │       ├── ChatScreen.kt                  bubbles, reactions, image picker
+    │       ├── ChatScreen.kt                  bubbles, reactions, image picker, emoji composer
     │       ├── GroupsScreen.kt                live group list + FAB
     │       ├── CreateGroupDialog.kt           name / kind / member picker
-    │       ├── GroupChatScreen.kt             group bubbles + broadcast send guard
+    │       ├── GroupChatScreen.kt             group bubbles + broadcast send guard + emoji composer
     │       ├── AboutScreen.kt                 nickname / version / port / avatar / exit
     │       ├── Avatar.kt                      initials avatar + file-image fallback
+    │       ├── EmojiCatalog.kt                lazy-loaded 10-category emoji data from resources
+    │       ├── EmojiPicker.kt                 tabbed LazyVerticalGrid picker + dialog wrapper
     │       └── FileImage.kt                   async Skia-decoded local file → Compose ImageBitmap
-    └── resources/                             (none yet)
+    └── resources/
+        └── emoji/                             Android-bundled emoji CSVs (Apache 2.0)
 ```
 
 ## Current status
@@ -231,23 +239,44 @@ ospchat-desktop/
   (same as `ospchat-android`). Drops the `gradle publishToMavenLocal`
   per-edit step and the sibling-checkout dance from CI. See
   "Why GitHub Packages..." above.
+- 2026-05-19 — Feature parity with Android: notifications, EXIF, full
+  emoji picker. `DesktopMessageNotifier` posts inbound DMs / group messages
+  via Compose `TrayState.sendNotification` and suppresses when the matching
+  chat is on-screen (shared `ActiveChatTracker`, fed by `DisposableEffect`
+  on `ChatScreen` / `GroupChatScreen`). `ExifAwareImageCompressor`
+  (metadata-extractor + `AffineTransform`) replaces `ImageIoCompressor`
+  for desktop attachments, baking rotation into the JPEG so phone-shot
+  images render upright on peers. `EmojiPicker` is a tabbed
+  `LazyVerticalGrid` over the Android-bundled emoji set (10 CSVs vendored
+  byte-for-byte from `androidx.emoji2:emoji2-emojipicker:1.5.0` under
+  `resources/emoji/`, Apache 2.0); used both for reactions (long-press a
+  bubble) and inline insertion (😊 button in the composer of both
+  `ChatScreen` and `GroupChatScreen`). Drops the old 12-emoji
+  `EMOJI_CHOICES` list. Skin-tone / gender variant popups deferred.
 
 ## Known limitations
 
 - **Tray support is platform-dependent.** GNOME-Wayland without
   AppIndicator extensions has no tray; we fall back to "X closes the app"
-  but lose the show/hide affordance.
-- **No system-tray notifications.** `MessageNotifier` is `NoOp` on desktop;
-  incoming messages don't fire OS-level notifications. (DND, focus rules
-  would need to live here too.) Tracked for v0.2.
+  but lose the show/hide affordance. The same fallback skips tray
+  notifications (the notifier's `sender` callback stays unbound and
+  inbound messages are dropped silently — the message itself is still
+  persisted to Room).
+- **No DND respect in notifications.** Desktop notifier suppresses only
+  when the matching chat is on-screen; there's no portable Linux/Mac/Win
+  API for system-wide Do-Not-Disturb. (Android additionally checks
+  `NotificationManager.currentInterruptionFilter`.)
+- **No notification-tap routing.** Clicking a tray notification on
+  desktop is informational — it doesn't open the originating chat.
+  Android deep-links via `ospchat://` intents.
 - **Self-avatar UI is in About only.** No drag-and-drop, no crop UI; the
   picker accepts JPEG / PNG / WEBP and the shared compressor scales to
   256 px on the longest edge.
-- **EXIF rotation not applied on desktop** image attachments. Phone JPEGs
-  with rotation tags will render in their stored orientation when picked
-  from a desktop. (Android handles this via `androidx.exifinterface`.)
-  Plug `metadata-extractor` in front of `ImageIoCompressor` when this
-  becomes a real complaint.
+- **Emoji picker shows base glyphs only.** Variants (skin tone × gender,
+  ZWJ family combinations) are parsed from the CSVs and kept on the
+  in-memory `Emoji` model, but the picker UI doesn't yet surface them
+  via long-press popup like Android. ~1,889 base glyphs across 10
+  categories are pickable.
 - **Composite-build vs GitHub Packages:** see "Why GitHub Packages..."
   above. Means a published `ospchat-shared` release is required to pick up
   shared-module changes (no `mavenLocal` short-circuit).
@@ -260,15 +289,17 @@ ospchat-desktop/
 
 ## Suggested next steps
 
-1. **System-tray notifications.** Switch `MessageNotifier` to a desktop impl
-   using AWT `SystemTray.getSystemTray().add(TrayIcon).displayMessage(...)`
-   on supported platforms; respect active-chat suppression like Android.
-2. **Compose Desktop UI tests.** A minimal smoke covering nickname-prompt
+1. **Emoji variant popup.** Long-press an emoji in the picker → show the
+   skin-tone × gender variants from `Emoji.variants`. Data is already
+   parsed; only the UI affordance is missing.
+2. **Notification-tap routing.** Surface a `SharedFlow<NotificationTap>`
+   from `DesktopMessageNotifier`, and have `MainRoot` switch `screen` to
+   the matching chat on emit. Brings the desktop closer to Android's
+   deep-link UX.
+3. **Compose Desktop UI tests.** A minimal smoke covering nickname-prompt
    → peer-list dispatch would catch regressions in `AppController`
    wiring without needing a real Skiko renderer (test the controller
    directly, then a couple of UI tests via `runComposeUiTest`).
-3. **EXIF on desktop** via `metadata-extractor` so phone-photographed
-   attachments render upright.
 4. **Drag-and-drop image attach** into ChatScreen (AWT drop target →
    `controller.sendImageAttachment`).
 5. **Crash-safe shutdown for in-flight DB transactions.** Today's 800 ms

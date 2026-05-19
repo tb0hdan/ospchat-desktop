@@ -24,6 +24,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -43,10 +44,18 @@ fun GroupChatScreen(
     messages: List<GroupMessage>,
     onBack: () -> Unit,
     onSend: (String) -> Unit,
+    onVisible: () -> Unit = {},
+    onHidden: () -> Unit = {},
 ) {
     var draft by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
+    var showEmojiPicker by remember { mutableStateOf(false) }
     val canPost = group.kind != GroupKind.BROADCAST || group.isCreator
+
+    DisposableEffect(group.id) {
+        onVisible()
+        onDispose { onHidden() }
+    }
 
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
@@ -116,6 +125,9 @@ fun GroupChatScreen(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            IconButton(onClick = { showEmojiPicker = true }, enabled = canPost) {
+                Text("😊", style = MaterialTheme.typography.titleLarge)
+            }
             OutlinedTextField(
                 value = draft,
                 onValueChange = { draft = it },
@@ -137,6 +149,14 @@ fun GroupChatScreen(
                 Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send")
             }
         }
+    }
+
+    if (showEmojiPicker) {
+        EmojiPickerDialog(
+            title = "Insert emoji",
+            onDismiss = { showEmojiPicker = false },
+            onPick = { emoji -> draft += emoji },
+        )
     }
 }
 
