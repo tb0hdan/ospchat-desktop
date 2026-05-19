@@ -20,6 +20,7 @@ import androidx.compose.material3.AssistChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -113,7 +114,9 @@ fun GroupChatScreen(
                 state = listState,
                 modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 16.dp),
+                contentPadding =
+                    androidx.compose.foundation.layout
+                        .PaddingValues(vertical = 16.dp),
             ) {
                 items(messages, key = { it.id }) { msg -> GroupBubble(msg) }
             }
@@ -126,7 +129,11 @@ fun GroupChatScreen(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             IconButton(onClick = { showEmojiPicker = true }, enabled = canPost) {
-                Text("😊", style = MaterialTheme.typography.titleLarge)
+                Text(
+                    text = "😊",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontFamily = EmojiFont.family,
+                )
             }
             OutlinedTextField(
                 value = draft,
@@ -136,6 +143,7 @@ fun GroupChatScreen(
                 },
                 singleLine = false,
                 enabled = canPost,
+                textStyle = LocalTextStyle.current.copy(fontFamily = EmojiFont.family),
                 modifier = Modifier.weight(1f),
             )
             val trimmed = draft.trim()
@@ -186,7 +194,11 @@ private fun GroupBubble(message: GroupMessage) {
                     color = textColor.copy(alpha = 0.7f),
                 )
             }
-            Text(text = message.body, color = textColor, style = MaterialTheme.typography.bodyMedium)
+            Text(
+                text = emojiAware(message.body),
+                color = textColor,
+                style = MaterialTheme.typography.bodyMedium,
+            )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
                     text =

@@ -41,8 +41,11 @@ fun PeerInfoDialog(
                 LabelValue("UUID", rec.uuid)
                 LabelValue(
                     "Status",
-                    if (rec.isOnline) "online at ${rec.host}:${rec.port}"
-                    else "offline (last seen ${formatTs(rec.lastSeenAt)})",
+                    if (rec.isOnline) {
+                        "online at ${rec.host}:${rec.port}"
+                    } else {
+                        "offline (last seen ${formatTs(rec.lastSeenAt)})"
+                    },
                 )
                 LabelValue("First seen", formatTs(rec.firstSeenAt))
                 LabelValue("Saved contact", if (rec.isContact) "yes" else "no")
@@ -82,7 +85,10 @@ fun PeerInfoDialog(
 }
 
 @Composable
-private fun LabelValue(label: String, value: String) {
+private fun LabelValue(
+    label: String,
+    value: String,
+) {
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
             text = "$label:",
@@ -94,7 +100,8 @@ private fun LabelValue(label: String, value: String) {
 }
 
 private fun formatTs(epochMillis: Long): String =
-    Instant.fromEpochMilliseconds(epochMillis)
+    Instant
+        .fromEpochMilliseconds(epochMillis)
         .toLocalDateTime(TimeZone.currentSystemDefault())
         .toString()
         .substringBefore('.')

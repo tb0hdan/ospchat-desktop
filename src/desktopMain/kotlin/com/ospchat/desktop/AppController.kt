@@ -68,7 +68,10 @@ class AppController(
      * Send a text message to [peer]. Fire-and-forget; UI observes status via
      * the message flow.
      */
-    fun sendText(peer: Peer, body: String) {
+    fun sendText(
+        peer: Peer,
+        body: String,
+    ) {
         if (body.isBlank()) return
         scope.launch {
             container.messageRepository.send(peer = peer, body = body)
@@ -76,7 +79,10 @@ class AppController(
     }
 
     /** Post [body] to the group identified by [groupId]. Fire-and-forget. */
-    fun sendGroupText(groupId: String, body: String) {
+    fun sendGroupText(
+        groupId: String,
+        body: String,
+    ) {
         if (body.isBlank()) return
         scope.launch {
             runCatching { container.groupMessageRepository.send(groupId = groupId, body = body) }
@@ -129,7 +135,11 @@ class AppController(
         }
     }
 
-    suspend fun reactToMessage(peer: com.ospchat.shared.data.discovery.Peer, messageId: String, emoji: String?) {
+    suspend fun reactToMessage(
+        peer: com.ospchat.shared.data.discovery.Peer,
+        messageId: String,
+        emoji: String?,
+    ) {
         runCatching { container.reactionRepository.react(peer = peer, messageId = messageId, emoji = emoji) }
             .onFailure { Log.w(TAG, "reactToMessage failed", it) }
     }
@@ -149,7 +159,11 @@ class AppController(
         }
     }
 
-    fun sendImageAttachment(peer: com.ospchat.shared.data.discovery.Peer, body: String, bytes: ByteArray) {
+    fun sendImageAttachment(
+        peer: com.ospchat.shared.data.discovery.Peer,
+        body: String,
+        bytes: ByteArray,
+    ) {
         scope.launch {
             runCatching { container.messageRepository.send(peer = peer, body = body, attachmentBytes = bytes) }
                 .onFailure { Log.w(TAG, "sendImageAttachment failed", it) }
@@ -159,7 +173,10 @@ class AppController(
     /** Marks all inbound messages from [peerUuid] as read at the current moment. */
     fun markPeerRead(peerUuid: String) {
         scope.launch {
-            val nowMillis = kotlinx.datetime.Clock.System.now().toEpochMilliseconds()
+            val nowMillis =
+                kotlinx.datetime.Clock.System
+                    .now()
+                    .toEpochMilliseconds()
             container.peerRepository.markRead(peerUuid = peerUuid, readAt = nowMillis)
             // Best-effort read receipt
             container.discoveryRepository.findPeer(peerUuid)?.let { peer ->
@@ -208,7 +225,10 @@ class AppController(
     suspend fun currentAvatarHash(): String? = container.identityRepository.currentAvatarHash()
 
     private fun sha256Hex(bytes: ByteArray): String {
-        val digest = java.security.MessageDigest.getInstance("SHA-256").digest(bytes)
+        val digest =
+            java.security.MessageDigest
+                .getInstance("SHA-256")
+                .digest(bytes)
         return digest.joinToString("") { "%02x".format(it) }
     }
 

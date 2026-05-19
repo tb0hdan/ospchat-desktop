@@ -161,7 +161,10 @@ fun AboutScreen(
 }
 
 @Composable
-private fun LabelValue(label: String, value: String) {
+private fun LabelValue(
+    label: String,
+    value: String,
+) {
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
             text = "$label:",

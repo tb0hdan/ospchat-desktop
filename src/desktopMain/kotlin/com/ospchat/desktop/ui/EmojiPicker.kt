@@ -90,13 +90,18 @@ private fun EmojiCell(
     onClick: () -> Unit,
 ) {
     Box(
-        modifier = Modifier
-            .size(36.dp)
-            .clickable(onClick = onClick)
-            .background(MaterialTheme.colorScheme.surface)
-            .padding(2.dp),
+        modifier =
+            Modifier
+                .size(36.dp)
+                .clickable(onClick = onClick)
+                .background(MaterialTheme.colorScheme.surface)
+                .padding(2.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(emoji, style = MaterialTheme.typography.titleMedium)
+        Text(
+            text = emoji,
+            style = MaterialTheme.typography.titleMedium,
+            fontFamily = EmojiFont.family,
+        )
     }
 }

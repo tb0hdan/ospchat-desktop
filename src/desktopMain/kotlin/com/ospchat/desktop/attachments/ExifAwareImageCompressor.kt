@@ -90,28 +90,34 @@ class ExifAwareImageCompressor : ImageCompressor {
                 transform.scale(-1.0, 1.0)
                 transform.translate(-w.toDouble(), 0.0)
             }
+
             ORIENTATION_ROTATE_180 -> {
                 transform.translate(w.toDouble(), h.toDouble())
                 transform.rotate(Math.PI)
             }
+
             ORIENTATION_FLIP_VERTICAL -> {
                 transform.scale(1.0, -1.0)
                 transform.translate(0.0, -h.toDouble())
             }
+
             ORIENTATION_TRANSPOSE -> {
                 transform.rotate(Math.PI / 2)
                 transform.scale(1.0, -1.0)
             }
+
             ORIENTATION_ROTATE_90 -> {
                 transform.translate(h.toDouble(), 0.0)
                 transform.rotate(Math.PI / 2)
             }
+
             ORIENTATION_TRANSVERSE -> {
                 transform.scale(-1.0, 1.0)
                 transform.translate(-h.toDouble(), 0.0)
                 transform.translate(0.0, w.toDouble())
                 transform.rotate(3 * Math.PI / 2)
             }
+
             ORIENTATION_ROTATE_270 -> {
                 transform.translate(0.0, w.toDouble())
                 transform.rotate(3 * Math.PI / 2)

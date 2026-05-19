@@ -19,8 +19,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.jetbrains.skia.Image as SkiaImage
 import java.io.File
+import org.jetbrains.skia.Image as SkiaImage
 
 /**
  * Decode an image from a local file path off the composition thread (Skia
@@ -34,14 +34,15 @@ fun FileImage(
     height: Int,
     modifier: Modifier = Modifier,
 ) {
-    val bitmapState = produceState<ImageBitmap?>(initialValue = null, key1 = path) {
-        value =
-            runCatching {
-                withContext(Dispatchers.IO) {
-                    SkiaImage.makeFromEncoded(File(path).readBytes()).toComposeImageBitmap()
-                }
-            }.getOrNull()
-    }
+    val bitmapState =
+        produceState<ImageBitmap?>(initialValue = null, key1 = path) {
+            value =
+                runCatching {
+                    withContext(Dispatchers.IO) {
+                        SkiaImage.makeFromEncoded(File(path).readBytes()).toComposeImageBitmap()
+                    }
+                }.getOrNull()
+        }
     val bitmap = bitmapState.value
 
     val maxW = 320.dp

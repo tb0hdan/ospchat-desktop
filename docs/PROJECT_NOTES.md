@@ -70,6 +70,7 @@ Out of scope (deferred):
 | Packaging               | `compose.desktop` → `jpackage` (host-bound: deb/dmg/msi only) |
 | Notification surface    | `DesktopMessageNotifier` → Compose `TrayState.sendNotification`; active-chat suppression via shared `ActiveChatTracker` |
 | Emoji picker            | Tabbed picker over the Android `emoji2-emojipicker` 1.5.0 dataset (10 categories, ~1,889 base glyphs vendored as CSVs in `resources/emoji/`) |
+| Emoji glyph rendering   | Noto Color Emoji (SIL OFL 1.1) vendored at `resources/fonts/NotoColorEmoji.ttf`; routed through `EmojiFont.family` so hosts without a system emoji font still render in color |
 | Logging on desktop      | stderr `println` (actual of shared `Log`)                     |
 | Build tool              | Gradle 8.10.2 (pinned in CI; system Gradle locally is fine)   |
 | Shared-module flow      | GitHub Packages registry (same as `ospchat-android`) — needs `gprUser` / `gprToken` PAT with `read:packages` |
@@ -184,10 +185,12 @@ ospchat-desktop/
     │       ├── AboutScreen.kt                 nickname / version / port / avatar / exit
     │       ├── Avatar.kt                      initials avatar + file-image fallback
     │       ├── EmojiCatalog.kt                lazy-loaded 10-category emoji data from resources
+    │       ├── EmojiFont.kt                   Bundled Noto Color Emoji typeface + emojiAware() AnnotatedString helper
     │       ├── EmojiPicker.kt                 tabbed LazyVerticalGrid picker + dialog wrapper
     │       └── FileImage.kt                   async Skia-decoded local file → Compose ImageBitmap
     └── resources/
-        └── emoji/                             Android-bundled emoji CSVs (Apache 2.0)
+        ├── emoji/                             Android-bundled emoji CSVs (Apache 2.0)
+        └── fonts/                             Noto Color Emoji TTF (SIL OFL 1.1)
 ```
 
 ## Current status
@@ -239,6 +242,15 @@ ospchat-desktop/
   (same as `ospchat-android`). Drops the `gradle publishToMavenLocal`
   per-edit step and the sibling-checkout dance from CI. See
   "Why GitHub Packages..." above.
+- 2026-05-19 — Bundled Noto Color Emoji (SIL OFL 1.1, ~10 MB) under
+  `resources/fonts/`. Exposed as `EmojiFont.family` and applied to
+  picker cells, reaction chips, both 😊 composer buttons, the message
+  composer (`OutlinedTextField.textStyle` — Skia per-glyph fallback
+  handles Latin), and message bodies (via `emojiAware()`, which builds
+  an `AnnotatedString` and wraps emoji-codepoint runs in a `SpanStyle`
+  targeting the bundled typeface). Fixes monochrome contour rendering
+  on hosts (notably most Linux distros) whose system FontMgr has no
+  color emoji font.
 - 2026-05-19 — Feature parity with Android: notifications, EXIF, full
   emoji picker. `DesktopMessageNotifier` posts inbound DMs / group messages
   via Compose `TrayState.sendNotification` and suppresses when the matching

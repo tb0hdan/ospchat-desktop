@@ -27,6 +27,13 @@ semantic versioning.
   `src/desktopMain/resources/emoji/`, Apache 2.0). Used both for
   message reactions (long-press a bubble) and inline composer insertion
   (😊 button in `ChatScreen` and `GroupChatScreen`).
+- **Bundled color emoji font.** Noto Color Emoji (SIL OFL 1.1, ~10 MB)
+  vendored under `src/desktopMain/resources/fonts/NotoColorEmoji.ttf`,
+  exposed through `EmojiFont.family` and applied to the picker cells,
+  reaction chips, composer text field, and message bodies (via an
+  `emojiAware` AnnotatedString helper that wraps emoji codepoint runs).
+  Fixes monochrome contour rendering on hosts without a system emoji
+  font (most Linux distros).
 
 ### Changed
 

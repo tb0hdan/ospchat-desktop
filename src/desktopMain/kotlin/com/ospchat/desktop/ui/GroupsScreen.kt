@@ -95,7 +95,10 @@ fun GroupsScreen(
 }
 
 @Composable
-private fun SectionHeader(label: String, count: Int) {
+private fun SectionHeader(
+    label: String,
+    count: Int,
+) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,

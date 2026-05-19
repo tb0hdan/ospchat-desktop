@@ -22,8 +22,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.jetbrains.skia.Image as SkiaImage
 import java.io.File
+import org.jetbrains.skia.Image as SkiaImage
 
 /**
  * Either renders a custom-avatar JPEG from disk, or a deterministic initials
@@ -87,14 +87,15 @@ private fun FileAvatar(
     modifier: Modifier,
     fallback: @Composable () -> Unit,
 ) {
-    val bitmapState = produceState<ImageBitmap?>(initialValue = null, key1 = path) {
-        value =
-            runCatching {
-                withContext(Dispatchers.IO) {
-                    SkiaImage.makeFromEncoded(File(path).readBytes()).toComposeImageBitmap()
-                }
-            }.getOrNull()
-    }
+    val bitmapState =
+        produceState<ImageBitmap?>(initialValue = null, key1 = path) {
+            value =
+                runCatching {
+                    withContext(Dispatchers.IO) {
+                        SkiaImage.makeFromEncoded(File(path).readBytes()).toComposeImageBitmap()
+                    }
+                }.getOrNull()
+        }
     val bitmap = bitmapState.value
     if (bitmap == null) {
         fallback()
@@ -132,8 +133,20 @@ private fun colorForKey(key: String): Color {
 
 private val PALETTE =
     listOf(
-        Color(0xFFE57373), Color(0xFFF06292), Color(0xFFBA68C8), Color(0xFF9575CD),
-        Color(0xFF7986CB), Color(0xFF64B5F6), Color(0xFF4FC3F7), Color(0xFF4DD0E1),
-        Color(0xFF4DB6AC), Color(0xFF81C784), Color(0xFFAED581), Color(0xFFFF8A65),
-        Color(0xFFA1887F), Color(0xFF90A4AE), Color(0xFFFFB74D), Color(0xFFDCE775),
+        Color(0xFFE57373),
+        Color(0xFFF06292),
+        Color(0xFFBA68C8),
+        Color(0xFF9575CD),
+        Color(0xFF7986CB),
+        Color(0xFF64B5F6),
+        Color(0xFF4FC3F7),
+        Color(0xFF4DD0E1),
+        Color(0xFF4DB6AC),
+        Color(0xFF81C784),
+        Color(0xFFAED581),
+        Color(0xFFFF8A65),
+        Color(0xFFA1887F),
+        Color(0xFF90A4AE),
+        Color(0xFFFFB74D),
+        Color(0xFFDCE775),
     )

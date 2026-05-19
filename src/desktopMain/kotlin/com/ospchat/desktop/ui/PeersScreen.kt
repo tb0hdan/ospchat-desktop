@@ -106,7 +106,10 @@ fun PeersScreen(
 }
 
 @Composable
-private fun SectionLabel(label: String, count: Int) {
+private fun SectionLabel(
+    label: String,
+    count: Int,
+) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -143,8 +146,7 @@ private fun PeerRow(
                 .combinedClickable(
                     onClick = onClick,
                     onLongClick = { menuOpen = true },
-                )
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+                ).padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {

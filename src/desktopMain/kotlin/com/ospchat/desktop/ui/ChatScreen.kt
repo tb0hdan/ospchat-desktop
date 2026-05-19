@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -119,7 +120,9 @@ fun ChatScreen(
                 state = listState,
                 modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 16.dp),
+                contentPadding =
+                    androidx.compose.foundation.layout
+                        .PaddingValues(vertical = 16.dp),
             ) {
                 items(messages, key = { it.id }) { msg ->
                     val msgReactions = reactions.filter { it.messageId == msg.id }
@@ -191,13 +194,18 @@ private fun ChatComposer(
             Icon(Icons.Filled.AttachFile, contentDescription = "Attach image")
         }
         IconButton(onClick = onEmojiClick) {
-            Text("😊", style = MaterialTheme.typography.titleLarge)
+            Text(
+                text = "😊",
+                style = MaterialTheme.typography.titleLarge,
+                fontFamily = EmojiFont.family,
+            )
         }
         OutlinedTextField(
             value = draft,
             onValueChange = onDraftChange,
             placeholder = { Text("Message") },
             singleLine = false,
+            textStyle = LocalTextStyle.current.copy(fontFamily = EmojiFont.family),
             modifier = Modifier.weight(1f),
         )
         val trimmed = draft.trim()
@@ -260,7 +268,11 @@ private fun MessageBubble(
                 )
             }
             if (message.body.isNotBlank()) {
-                Text(text = message.body, color = textColor, style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    text = emojiAware(message.body),
+                    color = textColor,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
             }
             // Attachment preview (if any).
             message.attachment?.let { att ->
@@ -322,13 +334,17 @@ private fun ReactionChips(
         grouped.forEach { (emoji, list) ->
             val mine = list.any { it.fromUuid == selfUuid }
             val bg =
-                if (mine) MaterialTheme.colorScheme.tertiaryContainer
-                else MaterialTheme.colorScheme.surfaceVariant
+                if (mine) {
+                    MaterialTheme.colorScheme.tertiaryContainer
+                } else {
+                    MaterialTheme.colorScheme.surfaceVariant
+                }
             Surface(
                 shape = CircleShape,
                 color = bg,
-                modifier = Modifier
-                    .padding(end = 2.dp),
+                modifier =
+                    Modifier
+                        .padding(end = 2.dp),
             ) {
                 Row(
                     modifier =
@@ -338,11 +354,14 @@ private fun ReactionChips(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    Text(emoji, style = MaterialTheme.typography.bodySmall)
+                    Text(
+                        text = emoji,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = EmojiFont.family,
+                    )
                     Text("${list.size}", style = MaterialTheme.typography.labelSmall)
                 }
             }
         }
     }
 }
-
