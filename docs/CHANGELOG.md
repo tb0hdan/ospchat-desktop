@@ -8,6 +8,17 @@ semantic versioning.
 
 ### Changed
 
+- **CI/release workflow actions bumped to Node 24 majors.** GitHub started
+  warning that the Node 20 runtime is being retired (forced default
+  switch on 2026-06-02, removal on 2026-09-16). `actions/checkout`,
+  `actions/setup-java`, `actions/upload-artifact`,
+  `actions/download-artifact`, and `actions/cache` were bumped from
+  `@v4` -> `@v5`; `softprops/action-gh-release` from `@v2` -> `@v3`.
+  `gradle/actions/setup-gradle` was bumped from `@v4` -> `@v5` and
+  deliberately pinned there — `@v6` relicensed the caching component
+  (`gradle-actions-caching`) as proprietary, so using it would
+  implicitly accept https://gradle.com/legal/terms-of-use/. None of
+  the upgrades change input contracts for how this repo calls them.
 - **macOS release matrix now ships both architectures.** Added a
   `macos-13` (Intel) entry alongside `macos-latest` (Apple Silicon) in
   `.github/workflows/release.yml`. Each macOS runner passes

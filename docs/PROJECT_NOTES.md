@@ -260,6 +260,16 @@ ospchat-desktop/
   `OSPChat-<version>-x86_64.dmg` / `OSPChat-<version>-arm64.dmg` (the
   workflow passes `-PmacArch=...` so `build.gradle.kts` differentiates
   the `packageName`).
+- 2026-05-19 — Bumped CI/release workflow actions to Node 24 majors
+  ahead of GitHub's Node-20 retirement (forced default 2026-06-02,
+  removal 2026-09-16). `actions/checkout`, `actions/setup-java`,
+  `actions/upload-artifact`, `actions/download-artifact`,
+  `actions/cache` now at `@v5`; `softprops/action-gh-release` at
+  `@v3`. `gradle/actions/setup-gradle` pinned to `@v5` — `@v6`
+  relicensed the caching component as proprietary
+  (https://gradle.com/legal/terms-of-use/), so the upgrade was
+  deliberately held back. Input contracts unchanged for how this
+  repo calls each action.
 - 2026-05-19 — Feature parity with Android: notifications, EXIF, full
   emoji picker. `DesktopMessageNotifier` posts inbound DMs / group messages
   via Compose `TrayState.sendNotification` and suppresses when the matching
