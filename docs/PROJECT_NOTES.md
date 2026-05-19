@@ -251,6 +251,15 @@ ospchat-desktop/
   targeting the bundled typeface). Fixes monochrome contour rendering
   on hosts (notably most Linux distros) whose system FontMgr has no
   color emoji font.
+- 2026-05-19 — Build pipeline fixes. (1) Installer `packageVersion`
+  derivation now preserves minor/patch from `VERSION`: `0.1.3` ships as
+  `1.1.3` instead of the previous flat `1.0.0` shim, so installer
+  filenames track real releases. (2) macOS release matrix split into two
+  runners — `macos-13` (Intel, x86_64 .dmg) and `macos-latest` (Apple
+  Silicon, arm64 .dmg). Both attached to each GitHub Release as
+  `OSPChat-<version>-x86_64.dmg` / `OSPChat-<version>-arm64.dmg` (the
+  workflow passes `-PmacArch=...` so `build.gradle.kts` differentiates
+  the `packageName`).
 - 2026-05-19 — Feature parity with Android: notifications, EXIF, full
   emoji picker. `DesktopMessageNotifier` posts inbound DMs / group messages
   via Compose `TrayState.sendNotification` and suppresses when the matching
@@ -295,9 +304,10 @@ ospchat-desktop/
 - **No tests in this module yet.** Shared has 25 tests; desktop has 0.
   The shape of the desktop UI is largely UI-only and Compose UI tests on
   desktop are a known footgun (Skiko + headless).
-- **`packageVersion = "1.0.0"`** in `compose.desktop.application` — jpackage
-  rejects `0.x` versions because MAJOR must be > 0. Project version stays
-  `0.1.0` in Gradle; only the installer metadata fakes `1.0.0`.
+- **Installer `packageVersion` is rewritten** when `VERSION` starts with
+  `0.`: jpackage rejects MAJOR=0, so `0.1.3` becomes `1.1.3` purely for
+  the installer metadata. The runtime `BuildInfo.VERSION` (shown in About)
+  still reads the real value verbatim.
 
 ## Suggested next steps
 

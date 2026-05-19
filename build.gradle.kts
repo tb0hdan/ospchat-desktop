@@ -20,11 +20,20 @@ val projectVersion: String =
         .trim()
 version = projectVersion
 
-// jpackage requires MAJOR > 0; pre-1.0 versions like 0.1.0 get bumped to
-// 1.0.0 just for the installer metadata. The runtime [BuildInfo.VERSION]
-// (shown in About) still reads the real version verbatim.
+// jpackage requires MAJOR > 0, so a pre-1.0 version has its leading "0."
+// rewritten to "1." (0.1.3 -> 1.1.3) so installer filenames still track
+// the real version's minor/patch. The runtime [BuildInfo.VERSION] shown
+// in About reads the real version verbatim.
 val packagingVersion: String =
-    if (projectVersion.startsWith("0.")) "1.0.0" else projectVersion
+    if (projectVersion.startsWith("0.")) "1." + projectVersion.removePrefix("0.") else projectVersion
+
+// Optional `-PmacArch=x86_64|arm64` from the release workflow so the
+// per-arch macOS matrix entries produce distinguishable .dmg filenames
+// (e.g. OSPChat-1.1.3-x86_64.dmg vs OSPChat-1.1.3-arm64.dmg). Absent on
+// Linux/Windows and on local builds, where packageName stays "OSPChat".
+val macArch: String? = providers.gradleProperty("macArch").orNull
+val installerPackageName: String =
+    if (macArch != null) "OSPChat-$macArch" else "OSPChat"
 
 kotlin {
     targets.configureEach {
@@ -104,7 +113,7 @@ compose.desktop {
 
         nativeDistributions {
             targetFormats(TargetFormat.Deb, TargetFormat.Dmg, TargetFormat.Msi)
-            packageName = "OSPChat"
+            packageName = installerPackageName
             packageVersion = packagingVersion
             description = "Open-source LAN chat (desktop)"
             vendor = "OSPChat"

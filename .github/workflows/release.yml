@@ -22,14 +22,25 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            target_ext: deb
+            artifact_name: ospchat-deb
             installer_glob: build/compose/binaries/main/deb/*.deb
-          - os: macos-latest
-            target_ext: dmg
+            gradle_extra: ''
+          # macos-13 stays pinned to Intel hardware; setup-java installs the
+          # x86_64 Temurin JDK which jpackage bundles into the runtime image.
+          - os: macos-13
+            artifact_name: ospchat-dmg-x86_64
             installer_glob: build/compose/binaries/main/dmg/*.dmg
+            gradle_extra: '-PmacArch=x86_64'
+          # macos-latest currently resolves to macos-14 (Apple Silicon);
+          # setup-java installs the arm64 Temurin JDK -> arm64 .dmg.
+          - os: macos-latest
+            artifact_name: ospchat-dmg-arm64
+            installer_glob: build/compose/binaries/main/dmg/*.dmg
+            gradle_extra: '-PmacArch=arm64'
           - os: windows-latest
-            target_ext: msi
+            artifact_name: ospchat-msi
             installer_glob: build/compose/binaries/main/msi/*.msi
+            gradle_extra: ''
 
     runs-on: ${{ matrix.os }}
 
@@ -51,16 +62,17 @@ jobs:
       - name: Package native installer
         # GHP credentials are surfaced as Gradle properties so
         # settings.gradle.kts can authenticate the ospchat-shared registry
-        # lookup.
+        # lookup. matrix.gradle_extra carries `-PmacArch=...` on the macOS
+        # entries so the produced .dmg filename embeds the architecture.
         env:
           ORG_GRADLE_PROJECT_gprUser: ${{ github.actor }}
           ORG_GRADLE_PROJECT_gprToken: ${{ secrets.GITHUB_TOKEN }}
-        run: gradle :packageDistributionForCurrentOS --no-daemon
+        run: gradle :packageDistributionForCurrentOS ${{ matrix.gradle_extra }} --no-daemon
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ospchat-${{ matrix.target_ext }}
+          name: ${{ matrix.artifact_name }}
           path: ${{ matrix.installer_glob }}
           if-no-files-found: error
           retention-days: 7
@@ -83,7 +95,8 @@ jobs:
         with:
           files: |
             artifacts/ospchat-deb/*.deb
-            artifacts/ospchat-dmg/*.dmg
+            artifacts/ospchat-dmg-x86_64/*.dmg
+            artifacts/ospchat-dmg-arm64/*.dmg
             artifacts/ospchat-msi/*.msi
           generate_release_notes: true
           fail_on_unmatched_files: true

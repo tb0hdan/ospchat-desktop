@@ -6,6 +6,20 @@ semantic versioning.
 
 ## [Unreleased]
 
+### Changed
+
+- **macOS release matrix now ships both architectures.** Added a
+  `macos-13` (Intel) entry alongside `macos-latest` (Apple Silicon) in
+  `.github/workflows/release.yml`. Each macOS runner passes
+  `-PmacArch=x86_64|arm64` so the produced installer is named
+  `OSPChat-<version>-<arch>.dmg`; both are attached to the GitHub
+  Release. Previously only an Apple Silicon `.dmg` was published.
+- **Installer `packageVersion` preserves minor/patch.** `build.gradle.kts`
+  rewrites a `0.x.y` `VERSION` to `1.x.y` (e.g. `0.1.3` -> `1.1.3`)
+  instead of the previous flat `1.0.0` shim, so installer artifact
+  filenames track real releases. The runtime `BuildInfo.VERSION` shown
+  in About still reads the real value verbatim.
+
 ### Added
 
 - **Tray notifications for inbound messages.** `DesktopMessageNotifier`
