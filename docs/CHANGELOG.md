@@ -8,6 +8,25 @@ semantic versioning.
 
 ### Fixed
 
+- **Peer-list flicker regression in `ospchat-shared:0.1.1` (fixed in
+  0.1.2).** 0.1.1 made `MessageClient` call
+  `DiscoveryRepository.forgetPeer` on TCP connection failures, and that
+  hook on JmDNS desktop ran a *blocking* `JmDNS.list(SERVICE_TYPE)`
+  call (up to ~6 s) from the MessageClient coroutine. On Android the
+  equivalent hook bounced the entire NSD discovery, which combined
+  with `DiscoveryForegroundService.peerSyncJob` (re-fires
+  `PeerAvatarSync` + `GroupSyncer` on every snapshot delta) turned a
+  single failed background HTTP call into an N-peer × M-call
+  re-entry loop, manifesting as several-times-per-second
+  appear/disappear churn on the Android peer list. 0.1.2:
+  (a) `forgetPeer` is now surgical — Android re-resolves only the
+  one peer via the existing resolve queue (no `stopServiceDiscovery`);
+  desktop drops the blocking `JmDNS.list` and keeps just
+  `requestServiceInfo`. (b) `MessageClient` per-method now takes a
+  `rediscover: Boolean = true`; background flows
+  (`PeerAvatarSync`, `GroupSyncer`, `PeerInfoNotifier`,
+  attachment download) call with `false`, so only user-initiated
+  sends can mutate the discovery snapshot on failure.
 - **One-way messaging after desktop restart.** Restarting the desktop app
   used to break Android→Desktop sends until the user nudged Android into
   re-resolving the peer (toggle airplane mode, restart the app, etc.).

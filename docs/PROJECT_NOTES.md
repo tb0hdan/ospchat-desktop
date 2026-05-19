@@ -84,7 +84,7 @@ share a composite. The shared module's KGP instance and the desktop
 module's KGP instance can't share the same fully-shared service.
 
 The chosen workaround is the same one `ospchat-android` uses: consume
-`com.ospchat:ospchat-shared:0.1.1` from the GitHub Packages Maven registry
+`com.ospchat:ospchat-shared:0.1.2` from the GitHub Packages Maven registry
 (`https://maven.pkg.github.com/tb0hdan/ospchat-shared`). Even public
 packages require an authenticated `GET`, so the build reads either
 `gprUser` / `gprToken` Gradle properties or `GITHUB_ACTOR` /
@@ -135,7 +135,7 @@ releases to GitHub Packages.
               └────────────────────────────────────────────┘
                              │
                              ▼
-                    com.ospchat:ospchat-shared:0.1.1
+                    com.ospchat:ospchat-shared:0.1.2
                   (via maven.pkg.github.com/tb0hdan/ospchat-shared)
 ```
 
@@ -334,6 +334,15 @@ ospchat-desktop/
   additionally wrapped in `runCatching` so any future failure (missing
   resource, Skia rejection of a swapped-in font, etc.) logs once and
   falls back to `FontFamily.Default` rather than crashing the UI.
+- 2026-05-19 — Followup to the port-stability fix: `ospchat-shared:0.1.1`
+  introduced a peer-list flicker / feedback-loop regression that 0.1.2
+  fixes. Two changes in shared: (1) `JmDnsPeerDiscovery.forgetPeer`
+  drops the blocking `JmDNS.list(SERVICE_TYPE)` call (kept only async
+  `requestServiceInfo`) so the MessageClient coroutine isn't blocked
+  ~6 s on the connection-failure path. (2) `MessageClient` per-call
+  `rediscover: Boolean = true`; background flows pass `false` so a
+  failed background sync doesn't mutate the snapshot. Wire compat
+  unchanged.
 - 2026-05-19 — Fixed one-way messaging after desktop restart. Root cause:
   `MessageServer` bound `port = 0` every boot (kernel-assigned ephemeral),
   and Android NSD doesn't fire `onServiceFound` / `onServiceLost` for a
