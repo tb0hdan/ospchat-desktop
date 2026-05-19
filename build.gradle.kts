@@ -117,6 +117,10 @@ compose.desktop {
             packageVersion = packagingVersion
             description = "Open-source LAN chat (desktop)"
             vendor = "OSPChat"
+            // androidx.datastore's bundled protobuf-lite reaches into sun.misc.Unsafe,
+            // which lives in jdk.unsupported. jdeps can't detect uses of sun.misc.*
+            // so jlink omits the module from the bundled JRE unless we ask for it.
+            modules("jdk.unsupported")
         }
     }
 }

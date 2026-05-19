@@ -270,6 +270,14 @@ ospchat-desktop/
   (https://gradle.com/legal/terms-of-use/), so the upgrade was
   deliberately held back. Input contracts unchanged for how this
   repo calls each action.
+- 2026-05-19 — Fixed startup crash in the bundled JRE on (at least)
+  Intel macOS: `NoClassDefFoundError: sun/misc/Unsafe` from
+  `androidx.datastore.preferences.protobuf` (protobuf-lite). `sun.misc.Unsafe`
+  lives in the `jdk.unsupported` JDK module; jdeps can't pick up
+  `sun.misc.*` references, so jlink dropped the module from the
+  bundled runtime. `build.gradle.kts` now declares
+  `modules("jdk.unsupported")` in `nativeDistributions` so the
+  jpackage runtime image ships it.
 - 2026-05-19 — Feature parity with Android: notifications, EXIF, full
   emoji picker. `DesktopMessageNotifier` posts inbound DMs / group messages
   via Compose `TrayState.sendNotification` and suppresses when the matching

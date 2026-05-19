@@ -6,6 +6,18 @@ semantic versioning.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Bundled JRE now includes `jdk.unsupported`.** Intel macOS `.dmg`
+  (and any installer built with the jpackage runtime image) crashed at
+  startup with `NoClassDefFoundError: sun/misc/Unsafe`. The class lives
+  in the `jdk.unsupported` module and is reached from
+  `androidx.datastore.preferences.protobuf` (protobuf-lite). `jdeps`
+  can't detect `sun.misc.*` usages, so jlink omitted the module from
+  the bundled runtime. `build.gradle.kts` now declares
+  `modules("jdk.unsupported")` in `nativeDistributions` so every
+  installer ships the module.
+
 ### Changed
 
 - **CI/release workflow actions bumped to Node 24 majors.** GitHub started
