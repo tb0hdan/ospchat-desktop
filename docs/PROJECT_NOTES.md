@@ -84,7 +84,7 @@ share a composite. The shared module's KGP instance and the desktop
 module's KGP instance can't share the same fully-shared service.
 
 The chosen workaround is the same one `ospchat-android` uses: consume
-`com.ospchat:ospchat-shared:0.1.0` from the GitHub Packages Maven registry
+`com.ospchat:ospchat-shared:0.1.1` from the GitHub Packages Maven registry
 (`https://maven.pkg.github.com/tb0hdan/ospchat-shared`). Even public
 packages require an authenticated `GET`, so the build reads either
 `gprUser` / `gprToken` Gradle properties or `GITHUB_ACTOR` /
@@ -135,7 +135,7 @@ releases to GitHub Packages.
               └────────────────────────────────────────────┘
                              │
                              ▼
-                    com.ospchat:ospchat-shared:0.1.0
+                    com.ospchat:ospchat-shared:0.1.1
                   (via maven.pkg.github.com/tb0hdan/ospchat-shared)
 ```
 
@@ -334,6 +334,24 @@ ospchat-desktop/
   additionally wrapped in `runCatching` so any future failure (missing
   resource, Skia rejection of a swapped-in font, etc.) logs once and
   falls back to `FontFamily.Default` rather than crashing the UI.
+- 2026-05-19 — Fixed one-way messaging after desktop restart. Root cause:
+  `MessageServer` bound `port = 0` every boot (kernel-assigned ephemeral),
+  and Android NSD doesn't fire `onServiceFound` / `onServiceLost` for a
+  port-only change on an existing service name — Android's cached
+  resolution stayed pointed at the dead port. Two-part fix in
+  `ospchat-shared`: (1) `MessageServer.start(uuid, nickname, preferredPort)`
+  now tries the previously-bound port (persisted by
+  `IdentityRepository.lastServerPort`) and falls back to ephemeral on
+  bind failure; `AppController` reads + writes the pref around the
+  bind. (2) `MessageClient` wraps every per-peer call in a one-shot
+  rediscover-and-retry — on TCP connect failure (`ConnectException`,
+  `SocketTimeout`, "connection refused" etc.), calls
+  `DiscoveryRepository.forgetPeer(uuid)` (which on JmDNS drops the cache
+  entry + fires `requestServiceInfo` + `list(SERVICE_TYPE)`, and on
+  Android NSD bounces discovery to force re-resolution), waits ≤3 s
+  for a fresh resolution with a different host:port, then retries
+  once. Application-level rejections (HTTP non-2xx) are not retried.
+  No OpenAPI changes (wire compatible).
 - 2026-05-19 — Feature parity with Android: notifications, EXIF, full
   emoji picker. `DesktopMessageNotifier` posts inbound DMs / group messages
   via Compose `TrayState.sendNotification` and suppresses when the matching

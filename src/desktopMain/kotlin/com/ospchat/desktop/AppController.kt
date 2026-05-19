@@ -42,17 +42,25 @@ class AppController(
         if (_running.value || nickname.isBlank()) return
         scope.launch {
             val uuid = container.identityRepository.ensureUuid()
+            val preferredPort = container.identityRepository.lastServerPort() ?: 0
             val port =
-                runCatching { container.messageServer.start(uuid = uuid, nickname = nickname) }
-                    .getOrElse {
-                        Log.e(TAG, "MessageServer.start failed", it)
-                        return@launch
-                    }
+                runCatching {
+                    container.messageServer.start(
+                        uuid = uuid,
+                        nickname = nickname,
+                        preferredPort = preferredPort,
+                    )
+                }.getOrElse {
+                    Log.e(TAG, "MessageServer.start failed", it)
+                    return@launch
+                }
             _boundPort.value = port
+            runCatching { container.identityRepository.setLastServerPort(port) }
+                .onFailure { Log.w(TAG, "setLastServerPort($port) failed", it) }
             runCatching { container.peerDiscovery.start(nickname = nickname, uuid = uuid, port = port) }
                 .onFailure { Log.e(TAG, "PeerDiscovery.start failed", it) }
             _running.value = true
-            Log.d(TAG, "started: uuid=$uuid nickname=$nickname port=$port")
+            Log.d(TAG, "started: uuid=$uuid nickname=$nickname port=$port (preferred=$preferredPort)")
 
             // Persist every newly-seen peer (and their address/nickname history).
             container.discoveryRepository.peerSnapshot.collect { snapshot ->

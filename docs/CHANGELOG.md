@@ -6,6 +6,25 @@ semantic versioning.
 
 ## [Unreleased]
 
+### Fixed
+
+- **One-way messaging after desktop restart.** Restarting the desktop app
+  used to break Android→Desktop sends until the user nudged Android into
+  re-resolving the peer (toggle airplane mode, restart the app, etc.).
+  Root cause was a two-part problem: (1) `MessageServer` always bound
+  `port = 0` so each boot got a fresh ephemeral port, and (2) Android's
+  NSD framework doesn't fire `onServiceFound` / `onServiceLost` for a
+  port-only change on an existing service name, so its cached resolution
+  pointed at the dead port indefinitely. Now: the bound port is
+  persisted via `IdentityRepository.lastServerPort` and reused on the
+  next start (falls back to ephemeral on `EADDRINUSE`), and
+  `MessageClient` wraps every per-peer HTTP call in a one-shot
+  rediscover-and-retry: on a TCP connect failure it calls
+  `DiscoveryRepository.forgetPeer(uuid)` (which bounces NSD discovery
+  / fires a JmDNS re-query), waits up to 3 s for a fresh resolution
+  whose host:port differs from the failed address, and retries once.
+  Application-level rejections (HTTP non-2xx) are not retried.
+
 ### Added
 
 - **macOS Info.plist + signing scaffold (firewall groundwork).** The

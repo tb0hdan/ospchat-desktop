@@ -76,7 +76,7 @@ class AppContainer {
 
     // --- Network client -----------------------------------------------------
 
-    val messageClient = MessageClient(http)
+    val messageClient = MessageClient(http = http, discoveryRepository = discoveryRepository)
 
     // --- Repositories -------------------------------------------------------
 
