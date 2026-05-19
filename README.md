@@ -55,6 +55,36 @@ gradle packageDistributionForCurrentOS
 #   Win  : build/compose/binaries/main/msi/*.msi
 ```
 
+## macOS firewall (unsigned builds)
+
+The GitHub-Released `.dmg` is currently **not code-signed**. With macOS'
+application firewall enabled (System Settings → Network → Firewall → On),
+the system has no stable Designated Requirement to anchor your "Allow
+incoming connections" answer to, so it re-asks on every launch and the
+Ktor listener stays blocked until you click through. Messaging silently
+breaks if the prompt is dismissed.
+
+Two workarounds while the build is unsigned:
+
+1. **Turn the firewall off** for testing — System Settings → Network →
+   Firewall → Off.
+2. **Allowlist the binary explicitly** (one-shot, survives relaunches
+   even without a signed app):
+
+   ```bash
+   sudo /usr/libexec/ApplicationFirewall/socketfilterfw \
+       --add        /Applications/OSPChat.app/Contents/MacOS/OSPChat
+   sudo /usr/libexec/ApplicationFirewall/socketfilterfw \
+       --unblockapp /Applications/OSPChat.app/Contents/MacOS/OSPChat
+   ```
+
+The proper fix is a Developer ID-signed `.dmg`; the signing path is
+already scaffolded in `build.gradle.kts` and `macos/entitlements.plist`
+— pass `-PmacSigningIdentity="Developer ID Application: …"` (and
+optionally `-PmacSigningKeychain=...`) to `gradle
+packageDistributionForCurrentOS` once a cert is provisioned and ALF will
+remember its answer.
+
 ## Layout
 
 ```

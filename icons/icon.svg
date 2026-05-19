@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Desktop launcher icon. Mirrors ospchat-android's adaptive launcher:
+  background color #0F172A and the foreground chat-bubble vector from
+  ../ospchat-android/app/src/main/res/drawable/ic_launcher_foreground.xml.
+  Drawn in the Android source viewBox (108x108) so the path data is
+  identical; the background is rendered as a rounded square (radius 24 of
+  108, ~22%) so macOS / Windows / Linux all get a self-masked squircle
+  without depending on per-platform icon masking.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" width="108" height="108">
+  <rect x="0" y="0" width="108" height="108" rx="24" ry="24" fill="#0F172A"/>
+  <path fill="#E2E8F0"
+        d="M54,30c-13.255,0 -24,9.85 -24,22 0,4.42 1.42,8.55 3.87,12.05L31,78l13.95,-3.71c2.86,0.76 5.93,1.16 9.05,1.16 13.255,0 24,-9.85 24,-22S67.255,30 54,30zM44,54a3,3 0 1 1 0,-6 3,3 0 0 1 0,6zM54,54a3,3 0 1 1 0,-6 3,3 0 0 1 0,6zM64,54a3,3 0 1 1 0,-6 3,3 0 0 1 0,6z"/>
+</svg>

@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Hardened-runtime entitlements for the desktop .dmg. Only loaded by jpackage
+  when ospchat-desktop is built with a Developer ID signing identity (see
+  the `macOS { signing { ... } }` scaffold in build.gradle.kts); an unsigned
+  build ignores this file entirely.
+
+  Minimum set for a LAN chat app:
+    com.apple.security.network.client  - outbound TCP/UDP (peer-to-peer send,
+                                          mDNS browse)
+    com.apple.security.network.server  - inbound TCP (Ktor /v1/* listener)
+    com.apple.security.files.user-selected.read-only - FileDialog image picker
+    com.apple.security.cs.allow-jit    - JVM JIT under hardened runtime
+    com.apple.security.cs.allow-unsigned-executable-memory - Skiko / native libs
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.network.client</key>
+    <true/>
+    <key>com.apple.security.network.server</key>
+    <true/>
+    <key>com.apple.security.files.user-selected.read-only</key>
+    <true/>
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+</dict>
+</plist>

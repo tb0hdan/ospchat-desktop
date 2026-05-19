@@ -35,7 +35,7 @@ DIST_DIR      := build/compose/binaries/main/app
 UBER_JAR_DIR  := build/compose/jars
 
 .DEFAULT_GOAL := help
-.PHONY: help info build run dist package uber-jar all release clean install-deb
+.PHONY: help info build run dist package uber-jar all release clean install-deb icons
 
 # ---- Help --------------------------------------------------------------------
 
@@ -101,6 +101,18 @@ else
 	@echo "install-deb is Linux-only. Host is $(OS_NAME)."
 	@exit 1
 endif
+
+icons: ## Regenerate platform icons (.icns/.ico/.png) from icons/icon.svg
+	@command -v rsvg-convert >/dev/null || { echo "rsvg-convert not found (apt install librsvg2-bin)"; exit 1; }
+	@command -v png2icns     >/dev/null || { echo "png2icns not found (apt install icnsutils)";        exit 1; }
+	@command -v convert      >/dev/null || { echo "ImageMagick 'convert' not found";                   exit 1; }
+	@cd icons && \
+	  for sz in 16 32 48 128 256 512 1024; do rsvg-convert -w $$sz -h $$sz icon.svg -o _icns-$$sz.png; done && \
+	  png2icns icon.icns _icns-16.png _icns-32.png _icns-48.png _icns-128.png _icns-256.png _icns-512.png _icns-1024.png && \
+	  for sz in 16 24 32 48 64 128 256; do rsvg-convert -w $$sz -h $$sz icon.svg -o _ico-$$sz.png; done && \
+	  convert _ico-16.png _ico-24.png _ico-32.png _ico-48.png _ico-64.png _ico-128.png _ico-256.png icon.ico && \
+	  cp _icns-512.png icon.png && \
+	  rm -f _icns-*.png _ico-*.png
 
 clean: ## gradle clean
 	$(GRADLE) clean

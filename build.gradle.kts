@@ -35,6 +35,16 @@ val macArch: String? = providers.gradleProperty("macArch").orNull
 val installerPackageName: String =
     if (macArch != null) "OSPChat-$macArch" else "OSPChat"
 
+// Developer ID signing for macOS is a no-op unless `-PmacSigningIdentity=...`
+// is passed (or ORG_GRADLE_PROJECT_macSigningIdentity is in the env). An
+// unsigned .dmg still installs and runs locally, but every relaunch
+// re-prompts macOS' application firewall because ALF keys its allow/deny
+// memory on a binary's Designated Requirement, which only exists for code
+// signed with a stable identity. Flip this property in CI once a paid
+// Apple Developer ID cert is provisioned to make ALF remember its answer.
+val macSigningIdentity: String? = providers.gradleProperty("macSigningIdentity").orNull
+val macSigningKeychain: String? = providers.gradleProperty("macSigningKeychain").orNull
+
 kotlin {
     targets.configureEach {
         compilations.configureEach {
@@ -121,6 +131,65 @@ compose.desktop {
             // which lives in jdk.unsupported. jdeps can't detect uses of sun.misc.*
             // so jlink omits the module from the bundled JRE unless we ask for it.
             modules("jdk.unsupported")
+
+            // Mirror ospchat-android's launcher icon. Each platform expects its
+            // own format: .icns for macOS, .ico for Windows, .png for Linux.
+            // Sources live in icons/ and are regenerated from icons/icon.svg
+            // via the make target `make icons`.
+            val iconsDir = project.layout.projectDirectory.dir("icons")
+            linux {
+                iconFile.set(iconsDir.file("icon.png"))
+            }
+            macOS {
+                iconFile.set(iconsDir.file("icon.icns"))
+
+                // Stable identifier jpackage writes into Info.plist's
+                // CFBundleIdentifier and reuses for LaunchServices, ALF, and
+                // TCC scoping. jpackage will otherwise synthesise one and the
+                // value can drift between builds — defeating any allow rule
+                // the user has already clicked through.
+                bundleID = "com.ospchat.desktop"
+                appCategory = "public.app-category.social-networking"
+
+                // macOS 15 (Sequoia) gates outbound .local resolution and
+                // mDNS multicast on the Local Network privacy prompt. JmDNS's
+                // outbound 5353 traffic is subject to this; declaring the
+                // service type up front means the system can render a
+                // meaningful prompt instead of just denying silently.
+                // Inbound TCP (the Ktor listener) is exempt from this prompt
+                // but still gated by ALF — that needs code signing, see below.
+                infoPlist {
+                    extraKeysRawXml =
+                        """
+                        <key>NSBonjourServices</key>
+                        <array>
+                            <string>_ospchat._tcp</string>
+                        </array>
+                        <key>NSLocalNetworkUsageDescription</key>
+                        <string>OSPChat finds other OSPChat clients on your local network so you can chat directly, with no server in the middle.</string>
+                        """.trimIndent()
+                }
+
+                // Wire a Developer ID identity if one was supplied via
+                // -PmacSigningIdentity=... — otherwise leave the build
+                // unsigned (sign=false default). With a stable signature
+                // ALF can persist the user's "Allow" decision across launches
+                // instead of re-prompting on every relaunch.
+                if (macSigningIdentity != null) {
+                    signing {
+                        sign.set(true)
+                        identity.set(macSigningIdentity)
+                        if (macSigningKeychain != null) {
+                            keychain.set(macSigningKeychain)
+                        }
+                    }
+                    entitlementsFile.set(project.layout.projectDirectory.file("macos/entitlements.plist"))
+                    runtimeEntitlementsFile.set(project.layout.projectDirectory.file("macos/entitlements.plist"))
+                }
+            }
+            windows {
+                iconFile.set(iconsDir.file("icon.ico"))
+            }
         }
     }
 }

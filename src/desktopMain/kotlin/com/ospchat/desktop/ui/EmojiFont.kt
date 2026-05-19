@@ -4,15 +4,34 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.platform.Font
 import androidx.compose.ui.text.withStyle
+import com.ospchat.shared.util.Log
 
 // Most Linux desktops (and headless CI hosts) ship no color emoji font, so
 // Skia falls back to a monochrome contour glyph for every pictograph. Bundle
 // Noto Color Emoji (SIL OFL 1.1) and route emoji-bearing text through it.
 object EmojiFont {
+    private const val TAG = "EmojiFont"
+    private const val RESOURCE = "fonts/NotoColorEmoji.ttf"
+
+    // Resolve bytes through this class's own classloader rather than Compose's
+    // Font(resource=...), which asserts non-null on Thread.contextClassLoader.
+    // jpackage on macOS leaves the AWT event thread's contextClassLoader null,
+    // which made the asserted unwrap NPE in production .dmg builds.
     val family: FontFamily by lazy {
-        FontFamily(Font(resource = "fonts/NotoColorEmoji.ttf"))
+        runCatching {
+            val stream =
+                EmojiFont::class.java.classLoader.getResourceAsStream(RESOURCE)
+                    ?: error("resource $RESOURCE not on classpath")
+            val bytes = stream.use { it.readBytes() }
+            FontFamily(Font(identity = RESOURCE, data = bytes, weight = FontWeight.Normal, style = FontStyle.Normal))
+        }.getOrElse { err ->
+            Log.w(TAG, "bundled emoji font unavailable, falling back to system fonts", err)
+            FontFamily.Default
+        }
     }
 }
 

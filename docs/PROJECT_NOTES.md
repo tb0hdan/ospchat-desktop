@@ -163,6 +163,13 @@ ospchat-desktop/
 ├── gradle/libs.versions.toml
 ├── docs/
 │   └── PROJECT_NOTES.md                       (this file)
+├── icons/
+│   ├── icon.svg                              source (Android launcher recreated)
+│   ├── icon.icns                             macOS launcher (multi-res 16..1024)
+│   ├── icon.ico                              Windows launcher (multi-res 16..256)
+│   └── icon.png                              Linux launcher (512 px)
+├── macos/
+│   └── entitlements.plist                    hardened-runtime entitlements (loaded only when signing identity supplied)
 └── src/desktopMain/
     ├── kotlin/com/ospchat/desktop/
     │   ├── Main.kt                            application{} entry, Tray, Window, AppRoot
@@ -278,6 +285,55 @@ ospchat-desktop/
   bundled runtime. `build.gradle.kts` now declares
   `modules("jdk.unsupported")` in `nativeDistributions` so the
   jpackage runtime image ships it.
+- 2026-05-19 — macOS Info.plist hardening + Developer ID signing
+  scaffold. Root cause: macOS' application firewall (ALF) keys allow/deny
+  decisions on a binary's Designated Requirement, which only exists for
+  code signed with a stable identity, so an unsigned `.dmg` re-prompts on
+  every relaunch and the Ktor `0.0.0.0:ephemeral` listener stays blocked
+  until the user clicks through. We can't produce a Developer-ID
+  signature without a paid Apple cert (and self-signed / ad-hoc-signed
+  builds have no DR for another Mac to recognise), but the surrounding
+  plumbing is now in place: `bundleID = "com.ospchat.desktop"`,
+  `appCategory = "public.app-category.social-networking"`,
+  `infoPlist.extraKeysRawXml` declares `NSBonjourServices = ["_ospchat._tcp"]`
+  and `NSLocalNetworkUsageDescription` (macOS 15 Sequoia gates outbound
+  mDNS multicast on the Local Network privacy prompt — inbound TCP is
+  exempt), and the `macOS { signing { ... } }` block plus
+  `macos/entitlements.plist` (network client/server, JIT, unsigned
+  executable memory for Skiko) activate when `-PmacSigningIdentity=...`
+  is passed. README documents the
+  `sudo /usr/libexec/ApplicationFirewall/socketfilterfw --add ...
+  --unblockapp ...` workaround unsigned-install users need until the
+  cert lands.
+- 2026-05-19 — Branded the desktop installer with the Android launcher
+  icon. `icons/icon.svg` recreates the Android adaptive icon
+  (`#0F172A` background + the chat-bubble vector from
+  `ospchat-android`'s `ic_launcher_foreground.xml`, fill `#E2E8F0`) in a
+  108-unit viewBox with a 24-radius rounded square so every host gets a
+  self-masked squircle without depending on platform icon masking.
+  `make icons` renders it to the three formats jpackage consumes:
+  `icon.icns` (multi-res 16…1024 via `png2icns`), `icon.ico` (multi-res
+  16…256 via ImageMagick), and `icon.png` (Linux, 512 px). The
+  `nativeDistributions` block sets `iconFile` per platform; verified
+  locally by checking `build/compose/binaries/main/app/OSPChat/lib/OSPChat.png`
+  is byte-identical to `icons/icon.png`.
+- 2026-05-19 — Fixed macOS `.dmg` startup crash the moment any
+  emoji-bearing composable entered the tree (`OutlinedTextField` in
+  `ChatScreen`/`GroupChatScreen`, the 😊 composer button, etc.). Root
+  cause: `EmojiFont.family` used Compose's `Font(resource = ...)`, whose
+  `typefaceResource` does `Intrinsics.checkNotNull(Thread.currentThread()
+  .contextClassLoader)`. The jpackage runtime image on macOS leaves the
+  AWT event thread's context classloader null, so the assert threw NPE
+  *before* the implementation's secondary `class.getResourceAsStream`
+  fallback ever ran. Linux and `gradle run` were unaffected because both
+  set a non-null context classloader. `EmojiFont` now reads the TTF
+  bytes via `EmojiFont::class.java.classLoader.getResourceAsStream(...)`
+  and feeds them to the byte-array
+  `androidx.compose.ui.text.platform.Font(identity, data, weight, style)`
+  factory, completely avoiding Compose's resource path. The lazy is
+  additionally wrapped in `runCatching` so any future failure (missing
+  resource, Skia rejection of a swapped-in font, etc.) logs once and
+  falls back to `FontFamily.Default` rather than crashing the UI.
 - 2026-05-19 — Feature parity with Android: notifications, EXIF, full
   emoji picker. `DesktopMessageNotifier` posts inbound DMs / group messages
   via Compose `TrayState.sendNotification` and suppresses when the matching

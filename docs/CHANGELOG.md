@@ -6,8 +6,60 @@ semantic versioning.
 
 ## [Unreleased]
 
+### Added
+
+- **macOS Info.plist + signing scaffold (firewall groundwork).** The
+  `.dmg` now declares a stable `CFBundleIdentifier`
+  (`com.ospchat.desktop`), an `LSApplicationCategoryType`
+  (`public.app-category.social-networking`), `NSBonjourServices`
+  (`_ospchat._tcp`), and `NSLocalNetworkUsageDescription`. The bundle ID
+  gives macOS' application firewall (ALF), Local Network privacy (TCC),
+  and LaunchServices a fixed key to scope their decisions to instead of
+  jpackage's synthesised identifier — previously each rebuild risked
+  invalidating the user's already-clicked-through firewall answer.
+  Forward-compat with macOS 15: NSBonjourServices is the system's
+  whitelist of mDNS service types an app may discover, and the
+  NSLocalNetworkUsageDescription is shown in the Sequoia local-network
+  privacy prompt that gates JmDNS's outbound 5353 multicast. Inbound
+  TCP (the Ktor `/v1/*` listener) is exempt from that prompt but still
+  gated by ALF — which requires a real code signature to remember
+  "Allow" across launches. The `macOS { signing { ... } }` block plus
+  `macos/entitlements.plist` (network client/server + JIT + unsigned
+  executable memory for Skiko) are wired but inert; pass
+  `-PmacSigningIdentity="Developer ID Application: …"` to
+  `gradle packageDistributionForCurrentOS` once a paid Developer ID
+  cert is available and ALF can finally persist its decision. Until
+  then the README documents the
+  `socketfilterfw --add … --unblockapp` workaround for unsigned
+  installs.
+- **Branded installer icon across Linux/macOS/Windows.** Mirrors
+  `ospchat-android`'s launcher (`#0F172A` background + the white-ish
+  chat-bubble vector from
+  `app/src/main/res/drawable/ic_launcher_foreground.xml`), recreated as
+  `icons/icon.svg` and rendered to the three formats jpackage expects:
+  `icon.icns` (macOS, multi-resolution 16…1024), `icon.ico` (Windows,
+  multi-resolution 16…256), and `icon.png` (Linux, 512px). The
+  `nativeDistributions { linux/macOS/windows { iconFile.set(...) } }`
+  block in `build.gradle.kts` wires the matching file per host, so .deb
+  / .dmg / .msi all ship with the OSPChat icon instead of the Compose /
+  Kotlin default. A `make icons` target regenerates the binaries from
+  `icons/icon.svg` (requires `librsvg2-bin`, `icnsutils`,
+  ImageMagick).
+
 ### Fixed
 
+- **macOS `.dmg` crash on first emoji-bearing screen.** The bundled
+  `NotoColorEmoji.ttf` was loaded via Compose's `Font(resource = ...)`,
+  which calls `Thread.currentThread().contextClassLoader` and asserts
+  non-null. In the jpackage runtime image on macOS the AWT event
+  thread's context classloader can be null, so the Kotlin null-check
+  threw NPE inside `androidx.compose.ui.text.platform.typefaceResource`
+  the moment any `OutlinedTextField` (or any other emoji-styled
+  composable) entered the tree. `EmojiFont` now reads the TTF bytes
+  through its own `Class.getClassLoader()` and passes them to the
+  byte-array `Font(identity, data, ...)` factory, and wraps the lazy
+  initializer in `runCatching` so a future load failure logs and falls
+  back to `FontFamily.Default` instead of taking down the UI.
 - **Bundled JRE now includes `jdk.unsupported`.** Intel macOS `.dmg`
   (and any installer built with the jpackage runtime image) crashed at
   startup with `NoClassDefFoundError: sun/misc/Unsafe`. The class lives
