@@ -27,13 +27,13 @@ jobs:
             gradle_extra: ''
           # macos-13 stays pinned to Intel hardware; setup-java installs the
           # x86_64 Temurin JDK which jpackage bundles into the runtime image.
-          - os: macos-13
+          - os: macos-26-intel
             artifact_name: ospchat-dmg-x86_64
             installer_glob: build/compose/binaries/main/dmg/*.dmg
             gradle_extra: '-PmacArch=x86_64'
           # macos-latest currently resolves to macos-14 (Apple Silicon);
           # setup-java installs the arm64 Temurin JDK -> arm64 .dmg.
-          - os: macos-latest
+          - os: macos-26
             artifact_name: ospchat-dmg-arm64
             installer_glob: build/compose/binaries/main/dmg/*.dmg
             gradle_extra: '-PmacArch=arm64'
