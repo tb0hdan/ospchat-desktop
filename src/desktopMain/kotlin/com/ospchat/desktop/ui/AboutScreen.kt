@@ -89,7 +89,7 @@ fun AboutScreen(
 
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             LabelValue("Desktop version", com.ospchat.desktop.BuildInfo.VERSION)
-            LabelValue("Wire API", "v1 (OpenAPI 0.8.0)")
+            LabelValue("Wire API", "v1 (OpenAPI 0.9.0)")
             LabelValue(
                 "Embedded server",
                 if (boundPort > 0) "port $boundPort" else "starting…",
