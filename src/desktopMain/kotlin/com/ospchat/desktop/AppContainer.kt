@@ -98,6 +98,9 @@ class AppContainer {
             dao = database.reactionDao(),
             client = messageClient,
             identityRepository = identityRepository,
+            groupDao = database.groupDao(),
+            peerDao = database.peerDao(),
+            discoveryRepository = discoveryRepository,
         )
     }
 
@@ -142,6 +145,7 @@ class AppContainer {
             groupRepository = groupRepository,
             client = messageClient,
             identityRepository = identityRepository,
+            reactionRepository = reactionRepository,
         )
     }
 

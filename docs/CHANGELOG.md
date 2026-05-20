@@ -6,6 +6,29 @@ semantic versioning.
 
 ## [Unreleased]
 
+### Added
+
+- **Reactions on group messages.** Right-click any group bubble (own or peer's)
+  to open the emoji picker; the selected emoji becomes the user's reaction on
+  that message. Chips appear under the body inside the bubble.
+  Chip display rule:
+  - 1 or 2 reacters with the same emoji → render tiny initials avatars
+    (oldest-first by `reactedAt`).
+  - 3+ → numeric count.
+  Click a chip to toggle: if it carries your own reaction it's removed,
+  otherwise it's added (matches DM semantics). Self-reactions tint the chip
+  with `tertiaryContainer`; others are neutral.
+
+  Persists via the existing `reactions` Room table (no migration needed —
+  `(messageId, fromUuid)` PK works for both DM and group messages because
+  message ids are globally-unique UUIDs). Delivery is **mesh fan-out** to
+  every other current group member (same pattern as `GroupMessageRepository.send`);
+  offline members converge via the extended group catch-up sync below.
+
+  Wire: `POST /v1/reactions` gains a nullable `groupId` field. When set, the
+  receiver validates `fromUuid` is in the named group's current member list
+  (replaces the DM peer/IP check). OpenAPI bumped to **0.9.0**.
+
 ### Changed
 
 - **Outbound message status uses checkmarks instead of plain lowercase

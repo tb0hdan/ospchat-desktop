@@ -262,6 +262,9 @@ private fun MainRoot(
             val messages by controller.container.groupMessageRepository
                 .messagesFor(current.groupId)
                 .collectAsState(initial = emptyList<GroupMessage>())
+            val groupReactions by controller.container.reactionRepository
+                .reactionsForGroup(current.groupId)
+                .collectAsState(initial = emptyList<Reaction>())
             val groupSnapshot = group
 
             // If the group disappears while we're on this screen — common
@@ -291,8 +294,13 @@ private fun MainRoot(
                 GroupChatScreen(
                     group = groupSnapshot,
                     messages = messages,
+                    reactions = groupReactions,
+                    selfUuid = selfUuid,
                     onBack = { screen = Screen.Main },
                     onSend = { body -> controller.sendGroupText(current.groupId, body) },
+                    onReact = { message, emoji ->
+                        controller.reactToGroupMessage(current.groupId, message.id, emoji)
+                    },
                     onLeave = {
                         screen = Screen.Main
                         controller.leaveGroup(current.groupId)

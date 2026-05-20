@@ -1,17 +1,28 @@
+@file:OptIn(ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
+
 package com.ospchat.desktop.ui
 
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.PointerMatcher
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.onClick
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -26,6 +37,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -36,18 +48,23 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.ospchat.shared.data.groups.GroupKind
 import com.ospchat.shared.data.groups.GroupMessage
 import com.ospchat.shared.data.groups.GroupRecord
+import com.ospchat.shared.data.reactions.Reaction
 
 @Composable
 fun GroupChatScreen(
     group: GroupRecord,
     messages: List<GroupMessage>,
+    reactions: List<Reaction>,
+    selfUuid: String,
     onBack: () -> Unit,
     onSend: (String) -> Unit,
+    onReact: (GroupMessage, String?) -> Unit,
     onLeave: () -> Unit,
     onVisible: () -> Unit = {},
     onHidden: () -> Unit = {},
@@ -56,6 +73,7 @@ fun GroupChatScreen(
     val listState = rememberLazyListState()
     var showEmojiPicker by remember { mutableStateOf(false) }
     var menuExpanded by remember { mutableStateOf(false) }
+    var reactionTarget by remember { mutableStateOf<GroupMessage?>(null) }
     val canPost = group.kind != GroupKind.BROADCAST || group.isCreator
 
     DisposableEffect(group.id) {
@@ -142,7 +160,20 @@ fun GroupChatScreen(
                     androidx.compose.foundation.layout
                         .PaddingValues(vertical = 16.dp),
             ) {
-                items(messages, key = { it.id }) { msg -> GroupBubble(msg) }
+                items(messages, key = { it.id }) { msg ->
+                    val msgReactions = reactions.filter { it.messageId == msg.id }
+                    GroupBubble(
+                        message = msg,
+                        reactions = msgReactions,
+                        selfUuid = selfUuid,
+                        onContextMenu = { reactionTarget = msg },
+                        onReactionToggle = { emoji ->
+                            val mine = msgReactions.firstOrNull { it.fromUuid == selfUuid }
+                            val next = if (mine?.emoji == emoji) null else emoji
+                            onReact(msg, next)
+                        },
+                    )
+                }
             }
         }
 
@@ -190,10 +221,27 @@ fun GroupChatScreen(
             onPick = { emoji -> draft += emoji },
         )
     }
+
+    reactionTarget?.let { target ->
+        EmojiPickerDialog(
+            title = "React",
+            onDismiss = { reactionTarget = null },
+            onPick = { emoji ->
+                onReact(target, emoji)
+                reactionTarget = null
+            },
+        )
+    }
 }
 
 @Composable
-private fun GroupBubble(message: GroupMessage) {
+private fun GroupBubble(
+    message: GroupMessage,
+    reactions: List<Reaction>,
+    selfUuid: String,
+    onContextMenu: () -> Unit,
+    onReactionToggle: (String) -> Unit,
+) {
     val mine = message.direction == GroupMessage.Direction.OUT
     val containerColor =
         if (mine) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
@@ -209,7 +257,10 @@ private fun GroupBubble(message: GroupMessage) {
                 Modifier
                     .widthIn(max = 480.dp)
                     .background(color = containerColor, shape = RoundedCornerShape(12.dp))
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                    .onClick(
+                        matcher = PointerMatcher.mouse(PointerButton.Secondary),
+                        onClick = onContextMenu,
+                    ).padding(horizontal = 12.dp, vertical = 8.dp),
         ) {
             if (!mine) {
                 Text(
@@ -223,6 +274,14 @@ private fun GroupBubble(message: GroupMessage) {
                 color = textColor,
                 style = MaterialTheme.typography.bodyMedium,
             )
+            if (reactions.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                GroupReactionChips(
+                    reactions = reactions,
+                    selfUuid = selfUuid,
+                    onToggle = onReactionToggle,
+                )
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
                     text =
@@ -247,6 +306,66 @@ private fun GroupBubble(message: GroupMessage) {
                         style = MaterialTheme.typography.labelSmall,
                         color = statusColor,
                     )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Same-emoji reaction chips. Per the spec:
+ *  - 1 or 2 reacters with the same emoji → render tiny initials avatars
+ *    (oldest-first) instead of a count.
+ *  - 3+ → numeric count.
+ *
+ * Click toggles the local user's reaction on that emoji.
+ */
+@Composable
+private fun GroupReactionChips(
+    reactions: List<Reaction>,
+    selfUuid: String,
+    onToggle: (String) -> Unit,
+) {
+    val grouped = reactions.groupBy { it.emoji }
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        grouped.forEach { (emoji, list) ->
+            val sorted = list.sortedBy { it.reactedAt }
+            val mine = sorted.any { it.fromUuid == selfUuid }
+            val bg =
+                if (mine) {
+                    MaterialTheme.colorScheme.tertiaryContainer
+                } else {
+                    MaterialTheme.colorScheme.surfaceVariant
+                }
+            Surface(
+                shape = CircleShape,
+                color = bg,
+                modifier = Modifier.padding(end = 2.dp),
+            ) {
+                Row(
+                    modifier =
+                        Modifier
+                            .clickable(onClick = { onToggle(emoji) })
+                            .padding(horizontal = 8.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(
+                        text = emoji,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = EmojiFont.family,
+                    )
+                    if (sorted.size <= 2) {
+                        sorted.forEach { r ->
+                            InitialsAvatar(
+                                nickname = r.fromNickname,
+                                uuid = r.fromUuid,
+                                size = 18.dp,
+                            )
+                        }
+                    } else {
+                        Text("${sorted.size}", style = MaterialTheme.typography.labelSmall)
+                    }
                 }
             }
         }

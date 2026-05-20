@@ -152,6 +152,26 @@ class AppController(
             .onFailure { Log.w(TAG, "reactToMessage failed", it) }
     }
 
+    /**
+     * React to a group message. Persists locally and fans out to every other
+     * current member. Fire-and-forget; offline members catch up on next sync.
+     */
+    fun reactToGroupMessage(
+        groupId: String,
+        messageId: String,
+        emoji: String?,
+    ) {
+        scope.launch {
+            runCatching {
+                container.reactionRepository.reactToGroup(
+                    groupId = groupId,
+                    messageId = messageId,
+                    emoji = emoji,
+                )
+            }.onFailure { Log.w(TAG, "reactToGroupMessage failed", it) }
+        }
+    }
+
     fun createGroup(
         name: String,
         kind: com.ospchat.shared.data.groups.GroupKind,

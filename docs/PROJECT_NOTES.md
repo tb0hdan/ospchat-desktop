@@ -421,6 +421,25 @@ ospchat-desktop/
   dialog (Android parity). Creator-side Add/Remove members + a desktop
   GroupInfoDialog were explicitly deferred — creators have no row
   context menu at all for now.
+- 2026-05-20 — **Group chat reactions.** Right-click a `GroupBubble`
+  opens the emoji picker; the picked glyph becomes the user's reaction
+  on that message. Chips render inside the bubble under the body.
+  Display rule per spec: 1–2 reacters with the same emoji show tiny
+  initials avatars (18 dp, oldest-first by `reactedAt`); 3+ shows the
+  count. Click toggles — own reaction is removed, otherwise added with
+  that emoji. Reuses the existing `reactions` Room table — no
+  migration; `(message_id, from_uuid)` PK works for group messages too
+  since message ids are globally-unique UUIDs. New DAO query
+  `ReactionDao.observeForGroup(groupId)` joins through
+  `group_messages.group_id`. Delivery is mesh fan-out via the new
+  `ReactionRepository.reactToGroup(...)` (mirrors
+  `GroupMessageRepository.send`). Wire: `POST /v1/reactions` gains a
+  nullable `groupId`; receivers validate the sender against group
+  membership when it's set (`MessageRoutes` falls back to the existing
+  DM check otherwise). Catch-up: `GroupSyncPayloadDto` gains a
+  `reactions` list — `GroupSyncer.buildResponse` now packs every
+  current reaction for the group, and `applyPayload` upserts them via
+  `ReactionRepository.applyReaction`. OpenAPI bumped to 0.9.0.
 - 2026-05-20 — Replaced Android-style long-press with desktop right-click
   for the two context menus that had used `combinedClickable(onLongClick = ...)`:
   the peer/contacts row (`PeersScreen.PeerRow`, Add/Remove/Info dropdown)
