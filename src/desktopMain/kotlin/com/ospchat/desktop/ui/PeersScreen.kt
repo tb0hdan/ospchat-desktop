@@ -1,8 +1,9 @@
 package com.ospchat.desktop.ui
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.PointerMatcher
 import androidx.compose.foundation.background
-import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.onClick
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.DropdownMenu
@@ -28,6 +30,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.unit.dp
 import com.ospchat.shared.data.peers.PeerRecord
 
@@ -139,13 +142,10 @@ private fun PeerRow(
         modifier =
             Modifier
                 .fillMaxWidth()
-                // combinedClickable: tap = open chat, long-press OR right-click = menu.
-                // Compose Desktop maps secondary mouse button to onLongClick when
-                // combinedClickable is used. Backup: keep the menu also openable
-                // explicitly from PeerInfo dialog if needed.
-                .combinedClickable(
-                    onClick = onClick,
-                    onLongClick = { menuOpen = true },
+                .clickable(onClick = onClick)
+                .onClick(
+                    matcher = PointerMatcher.mouse(PointerButton.Secondary),
+                    onClick = { menuOpen = true },
                 ).padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),

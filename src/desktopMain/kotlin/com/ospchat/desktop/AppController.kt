@@ -167,6 +167,21 @@ class AppController(
         }
     }
 
+    /**
+     * Self-removal from [groupId]. Fire-and-forget: broadcasts the leave to
+     * remaining members on a best-effort basis and purges the local copy
+     * (group entity + messages). Callers should pop the chat screen
+     * synchronously rather than waiting on this — otherwise the
+     * `observeOne(groupId)` Flow emits null on `applyLocalLeave` and the
+     * "Group no longer exists" fallback flashes for a frame.
+     */
+    fun leaveGroup(groupId: String) {
+        scope.launch {
+            runCatching { container.leaveGroupUseCase(groupId) }
+                .onFailure { Log.w(TAG, "leaveGroup($groupId) failed", it) }
+        }
+    }
+
     fun sendImageAttachment(
         peer: com.ospchat.shared.data.discovery.Peer,
         body: String,

@@ -361,6 +361,80 @@ ospchat-desktop/
   for a fresh resolution with a different host:port, then retries
   once. Application-level rejections (HTTP non-2xx) are not retried.
   No OpenAPI changes (wire compatible).
+- 2026-05-20 — Outbound message status now uses checkmarks (Android
+  parity). `ChatScreen.MessageBubble` and
+  `GroupChatScreen.GroupBubble` previously displayed
+  `message.status.name.lowercase()` as plain text. Both now render
+  Android's symbol map: `Sending…` / `✓` / `✓✓` / `⚠ Not delivered`
+  for `Message.Status`, and `Sending…` / `✓` / `⚠ Not delivered`
+  for `GroupMessage.Status` (groups have no READ state). Colors:
+  faded `textColor` for SENDING/DELIVERED,
+  `MaterialTheme.colorScheme.primary` for READ (matches Android
+  exactly — Android also uses `primary` on a `primaryContainer`
+  bubble; intentionally subtle), `MaterialTheme.colorScheme.error`
+  for FAILED. Desktop's FAILED string differs from Android's
+  `"⚠ Tap to retry"` (we use `"⚠ Not delivered"` — accurate
+  copy of Android's group-screen string) because there's no retry
+  callback wired through `AppController` yet.
+- 2026-05-20 — Fullscreen image preview parity with Android. New
+  `ui/FullscreenImageOverlay.kt` decodes the file via Skia (same path
+  as `FileImage`) and renders inside `Popup(PopupProperties(focusable
+  = true))` with a black-backdrop, `ContentScale.Fit`, and click-to-
+  dismiss. `Popup` was chosen over `Dialog` because Compose Desktop's
+  `Dialog` opens a separate OS window — wrong for a chat-attachment
+  preview. `focusable = true` makes the popup grab keyboard focus and
+  routes Escape to `onDismissRequest`, so no explicit key handler is
+  needed. `MessageBubble` gained an `onImageTap: (String) -> Unit`
+  parameter; the existing `FileImage(...)` call now passes
+  `modifier = Modifier.clickable { onImageTap(path) }`. Pinch-zoom /
+  pan (which Android has via `rememberTransformableState`) was
+  deliberately deferred — the mouse-wheel-zoom UX is a separate
+  affordance from the touch one.
+- 2026-05-20 — Hardened the `Screen.GroupChat` branch in `MainRoot`
+  against a deleted group. Triggered by the leave-group flow:
+  `broadcastLeave` can block several seconds on unreachable peers
+  before `applyLocalLeave` finally deletes the row, and if the user
+  re-entered the same group from the list during that window, the
+  chat branch used to render a full-area `"Group no longer exists"`
+  Box. That branch doesn't include the NavigationRail, so the user
+  was trapped. Now: `LaunchedEffect(groupSnapshot, groupId)` flips a
+  `remember(groupId) { mutableStateOf(false) }` `hasLoaded` flag on the
+  first non-null emission and pops `screen = Screen.Main` on any
+  subsequent null. A 200 ms `delay` guard handles the race where the
+  group was already gone before the Flow ever emitted (no `hasLoaded`
+  set, no synchronous pop): if still null after the delay, pop. While
+  null, the branch renders nothing rather than the old error Box.
+- 2026-05-20 — Wired the shared `LeaveGroupUseCase` into the desktop UI.
+  `AppContainer.leaveGroupUseCase` (lazy, built from existing
+  `groupRepository` / `groupDao` / `groupBroadcaster` providers) +
+  `AppController.leaveGroup(groupId)` (fire-and-forget on the IO scope).
+  Two UI entry points, both hidden when `group.isCreator` (the shared
+  use case silently no-ops for creators per "the UI hides the option"):
+  (1) `MoreVert` overflow in `GroupChatScreen`'s top row → `DropdownMenu`
+  with "Leave group"; (2) right-click on `GroupsScreen.GroupRow` →
+  same `DropdownMenu`. From the chat-screen path, `Main.kt` pops
+  `screen = Screen.Main` *before* invoking the controller so the
+  "Group no longer exists" fallback doesn't flash between
+  `applyLocalLeave`'s row delete and the screen state catching up;
+  from the groups-list path no pop is needed because the row simply
+  disappears when `observeAll()` re-emits without it. No confirmation
+  dialog (Android parity). Creator-side Add/Remove members + a desktop
+  GroupInfoDialog were explicitly deferred — creators have no row
+  context menu at all for now.
+- 2026-05-20 — Replaced Android-style long-press with desktop right-click
+  for the two context menus that had used `combinedClickable(onLongClick = ...)`:
+  the peer/contacts row (`PeersScreen.PeerRow`, Add/Remove/Info dropdown)
+  and the chat message bubble (`ChatScreen.MessageBubble`, reactions
+  emoji picker). Both now use the desktop-only
+  `Modifier.onClick(matcher = PointerMatcher.mouse(PointerButton.Secondary), ...)`
+  alongside the existing `clickable(onClick = ...)` for the primary tap.
+  The reaction-chip wrapper, which had a no-op `onLongClick = {}`, was
+  simplified to plain `clickable`. The stale comment in `PeersScreen`
+  claiming `combinedClickable` mapped the secondary mouse button to
+  `onLongClick` on desktop was incorrect — Compose's `combinedClickable`
+  only fires `onLongClick` from a held primary button or a true
+  long-press touch gesture, never from a right-click — so previously
+  desktop users had to hold the *left* button down to open these menus.
 - 2026-05-19 — Feature parity with Android: notifications, EXIF, full
   emoji picker. `DesktopMessageNotifier` posts inbound DMs / group messages
   via Compose `TrayState.sendNotification` and suppresses when the matching

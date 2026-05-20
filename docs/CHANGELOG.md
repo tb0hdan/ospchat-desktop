@@ -6,6 +6,97 @@ semantic versioning.
 
 ## [Unreleased]
 
+### Changed
+
+- **Outbound message status uses checkmarks instead of plain lowercase
+  text.** Both `ChatScreen.MessageBubble` and
+  `GroupChatScreen.GroupBubble` previously rendered
+  `message.status.name.lowercase()` ("sending", "delivered", "read",
+  "failed") in the bubble footer. Now they match Android's symbols:
+  `Sending…` (faded textColor) → `✓` (faded) → `✓✓`
+  (`MaterialTheme.colorScheme.primary`, for READ in 1:1 only — group
+  messages have no per-member read tracking, so the group bubble stops
+  at DELIVERED). FAILED renders as `⚠ Not delivered` in error color
+  on both. The 1:1 string differs from Android's `"⚠ Tap to retry"`
+  because the desktop client has no retry affordance wired yet —
+  promising a tap action that doesn't exist would be worse than the
+  symbol parity gain. Wiring retry is a separate follow-up.
+
+### Added
+
+- **Fullscreen image preview in chat.** Clicking an image attachment in
+  `ChatScreen` opens `FullscreenImageOverlay` — a black-backdrop
+  in-window overlay that renders the image with `ContentScale.Fit`.
+  Click anywhere or press Escape to dismiss. Mirrors
+  `ospchat-android`'s `FullscreenImageDialog` (minus pinch-zoom/pan,
+  which doesn't translate to mouse and was deferred). Implemented via
+  `Popup(properties = PopupProperties(focusable = true, ...))` rather
+  than `Dialog`, so it stays in the same OS window (a `Dialog` on
+  Compose Desktop opens a separate window — wrong feel for a
+  chat-attachment preview). `focusable = true` also gives us native
+  Escape / back-press dismissal without an explicit key handler.
+
+### Fixed
+
+- **Group-chat screen no longer strands the user when the group goes away.**
+  When `controller.leaveGroup` runs, its background `broadcastLeave` can
+  take several seconds blocking on unreachable peers before
+  `applyLocalLeave` finally deletes the row. If the user navigated back
+  into the same group during that window, the `observeOne(groupId)` flow
+  would eventually emit null and the chat screen rendered a full-area
+  `"Group no longer exists"` Box with no Back affordance and no
+  NavigationRail (the `Screen.GroupChat` branch in `MainRoot` doesn't
+  include the rail), trapping the user with no way out short of
+  restarting. The branch now pops `screen = Screen.Main` automatically
+  when the group transitions from loaded → null, using a
+  `remember(groupId) { mutableStateOf(false) }` "have we ever seen this
+  group" flag so the initial pre-load null doesn't trigger a spurious
+  pop. As a safety net for the race where the group is already gone
+  *before* the Flow's first emission, a 200 ms `delay` filters the
+  initial null and pops if it's still null afterward.
+
+### Added
+
+- **Leave-group UI affordance.** The shared `LeaveGroupUseCase`
+  (which broadcasts `POST /v1/groups/leave` then runs
+  `GroupRepository.applyLocalLeave` to purge the group entity + messages)
+  was already published by `ospchat-shared` and consumed by Android, but
+  desktop had no UI to invoke it. Two entry points now exist:
+  (1) a `MoreVert` kebab in the `GroupChatScreen` top bar opens a
+  dropdown with "Leave group", and (2) right-clicking a row in
+  `GroupsScreen` opens the same item. Both surfaces are hidden when
+  `group.isCreator` — the shared use case explicitly disallows
+  creator-leave in v1 ("the UI hides the option") so showing the
+  affordance would be a no-op. No confirmation dialog (matches Android
+  parity). `AppContainer` now lazy-builds `LeaveGroupUseCase` from the
+  existing `groupRepository`, `database.groupDao()`, and
+  `groupBroadcaster` providers; `AppController.leaveGroup(groupId)` is
+  fire-and-forget on the IO scope. From the chat screen the caller
+  pops to `Screen.Main` *before* invoking the controller, so the
+  "Group no longer exists" fallback doesn't flash for one frame
+  between `applyLocalLeave` deleting the row and the screen state
+  catching up.
+
+### Changed
+
+- **Context menus now open on right-click instead of long-press.** The
+  contacts/peers list (`PeersScreen.PeerRow`) and chat message bubbles
+  (`ChatScreen.MessageBubble`) previously inherited the Android touch
+  idiom of `combinedClickable(onLongClick = ...)`, which on desktop
+  required the user to hold the *left* mouse button down for ~500 ms.
+  Both call sites now use the desktop-only
+  `Modifier.onClick(matcher = PointerMatcher.mouse(PointerButton.Secondary))`
+  so the Add/Remove/Info dropdown on a peer row and the reactions emoji
+  picker on a bubble open on a normal right-click. Left-click on a peer
+  row still opens the chat; left-click on a bubble is now a no-op
+  (previously also a no-op via `combinedClickable(onClick = {})`).
+  Reaction chips' no-op `onLongClick` was dropped in favour of plain
+  `clickable`. The stale comment in `PeersScreen` claiming
+  `combinedClickable` mapped the secondary button to `onLongClick` on
+  desktop was incorrect — Compose's `combinedClickable` only triggers
+  `onLongClick` from a held primary button or a real long-press touch
+  gesture, never from a secondary mouse click.
+
 ### Fixed
 
 - **Peer-list flicker regression in `ospchat-shared:0.1.1` (fixed in

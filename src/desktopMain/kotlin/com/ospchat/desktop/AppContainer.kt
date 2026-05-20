@@ -24,6 +24,7 @@ import com.ospchat.shared.data.peers.PeerInfoNotifier
 import com.ospchat.shared.data.peers.PeerRepository
 import com.ospchat.shared.data.reactions.ReactionRepository
 import com.ospchat.shared.domain.groups.GroupBroadcaster
+import com.ospchat.shared.domain.groups.LeaveGroupUseCase
 import com.ospchat.shared.net.client.MessageClient
 import com.ospchat.shared.net.server.MessageServer
 import com.ospchat.shared.notifications.ActiveChatTracker
@@ -151,6 +152,14 @@ class AppContainer {
             peerDao = database.peerDao(),
             discoveryRepository = discoveryRepository,
             client = messageClient,
+        )
+    }
+
+    val leaveGroupUseCase by lazy {
+        LeaveGroupUseCase(
+            groupRepository = groupRepository,
+            groupDao = database.groupDao(),
+            groupBroadcaster = groupBroadcaster,
         )
     }
 

@@ -42,6 +42,7 @@ import com.ospchat.shared.data.groups.GroupMessage
 import com.ospchat.shared.data.messages.Message
 import com.ospchat.shared.data.peers.PeerRecord
 import com.ospchat.shared.data.reactions.Reaction
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 fun main() =
@@ -262,16 +263,40 @@ private fun MainRoot(
                 .messagesFor(current.groupId)
                 .collectAsState(initial = emptyList<GroupMessage>())
             val groupSnapshot = group
-            if (groupSnapshot == null) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("Group no longer exists")
+
+            // If the group disappears while we're on this screen — common
+            // when leaveGroup's background broadcast takes seconds to time
+            // out unreachable peers and applyLocalLeave only deletes the
+            // row afterwards, while the user has navigated back into the
+            // same group — pop to the main shell instead of rendering a
+            // dead-end full-area error. The Screen.GroupChat branch
+            // doesn't include the NavigationRail, so a stuck null state
+            // really does strand the user with no way out.
+            var hasLoaded by remember(current.groupId) { mutableStateOf(false) }
+            LaunchedEffect(groupSnapshot, current.groupId) {
+                if (groupSnapshot != null) {
+                    hasLoaded = true
+                } else if (hasLoaded) {
+                    screen = Screen.Main
+                } else {
+                    // Initial null from collectAsState(initial = null) before
+                    // the Flow loads. Give it a moment; if still null, the
+                    // group was already gone when we navigated in.
+                    delay(200)
+                    if (group == null) screen = Screen.Main
                 }
-            } else {
+            }
+
+            if (groupSnapshot != null) {
                 GroupChatScreen(
                     group = groupSnapshot,
                     messages = messages,
                     onBack = { screen = Screen.Main },
                     onSend = { body -> controller.sendGroupText(current.groupId, body) },
+                    onLeave = {
+                        screen = Screen.Main
+                        controller.leaveGroup(current.groupId)
+                    },
                     onVisible = { controller.onGroupChatVisible(current.groupId) },
                     onHidden = { controller.onGroupChatHidden(current.groupId) },
                 )
@@ -342,6 +367,9 @@ private fun GroupsTab(
         groups = groups,
         onGroupClick = onGroupClick,
         onNewGroup = onNewGroup,
+        // No screen pop here (unlike the GroupChat onLeave above) — the user is
+        // on the groups tab, so the row simply disappears when observeAll emits.
+        onLeaveGroup = { group -> controller.leaveGroup(group.id) },
     )
 }
 

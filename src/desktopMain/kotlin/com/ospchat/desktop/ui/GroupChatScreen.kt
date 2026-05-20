@@ -16,7 +16,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -45,12 +48,14 @@ fun GroupChatScreen(
     messages: List<GroupMessage>,
     onBack: () -> Unit,
     onSend: (String) -> Unit,
+    onLeave: () -> Unit,
     onVisible: () -> Unit = {},
     onHidden: () -> Unit = {},
 ) {
     var draft by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
     var showEmojiPicker by remember { mutableStateOf(false) }
+    var menuExpanded by remember { mutableStateOf(false) }
     val canPost = group.kind != GroupKind.BROADCAST || group.isCreator
 
     DisposableEffect(group.id) {
@@ -95,6 +100,25 @@ fun GroupChatScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+            if (!group.isCreator) {
+                Box {
+                    IconButton(onClick = { menuExpanded = true }) {
+                        Icon(Icons.Filled.MoreVert, contentDescription = "Group actions")
+                    }
+                    DropdownMenu(
+                        expanded = menuExpanded,
+                        onDismissRequest = { menuExpanded = false },
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Leave group") },
+                            onClick = {
+                                menuExpanded = false
+                                onLeave()
+                            },
+                        )
+                    }
+                }
             }
         }
         HorizontalDivider()
@@ -211,10 +235,17 @@ private fun GroupBubble(message: GroupMessage) {
                     color = textColor.copy(alpha = 0.6f),
                 )
                 if (mine) {
+                    val faded = textColor.copy(alpha = 0.6f)
+                    val (statusText, statusColor) =
+                        when (message.status) {
+                            GroupMessage.Status.SENDING -> "Sending…" to faded
+                            GroupMessage.Status.DELIVERED -> "✓" to faded
+                            GroupMessage.Status.FAILED -> "⚠ Not delivered" to MaterialTheme.colorScheme.error
+                        }
                     Text(
-                        text = message.status.name.lowercase(),
+                        text = statusText,
                         style = MaterialTheme.typography.labelSmall,
-                        color = textColor.copy(alpha = 0.6f),
+                        color = statusColor,
                     )
                 }
             }

@@ -3,8 +3,9 @@
 package com.ospchat.desktop.ui
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.PointerMatcher
 import androidx.compose.foundation.background
-import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,6 +21,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.onClick
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -43,6 +45,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.ospchat.shared.data.discovery.Peer
@@ -70,6 +73,7 @@ fun ChatScreen(
     val listState = rememberLazyListState()
     var emojiTarget by remember { mutableStateOf<Message?>(null) }
     var showComposerEmoji by remember { mutableStateOf(false) }
+    var fullscreenImagePath by remember { mutableStateOf<String?>(null) }
 
     DisposableEffect(peer.uuid) {
         onVisible()
@@ -130,12 +134,13 @@ fun ChatScreen(
                         message = msg,
                         reactions = msgReactions,
                         selfUuid = selfUuid,
-                        onLongPress = { emojiTarget = msg },
+                        onContextMenu = { emojiTarget = msg },
                         onReactionToggle = { emoji ->
                             val mine = msgReactions.firstOrNull { it.fromUuid == selfUuid }
                             val newEmoji = if (mine?.emoji == emoji) null else emoji
                             onReact(msg, newEmoji)
                         },
+                        onImageTap = { path -> fullscreenImagePath = path },
                     )
                 }
             }
@@ -171,6 +176,10 @@ fun ChatScreen(
             onDismiss = { showComposerEmoji = false },
             onPick = { emoji -> draft += emoji },
         )
+    }
+
+    fullscreenImagePath?.let { path ->
+        FullscreenImageOverlay(path = path, onDismiss = { fullscreenImagePath = null })
     }
 }
 
@@ -239,8 +248,9 @@ private fun MessageBubble(
     message: Message,
     reactions: List<Reaction>,
     selfUuid: String,
-    onLongPress: () -> Unit,
+    onContextMenu: () -> Unit,
     onReactionToggle: (String) -> Unit,
+    onImageTap: (String) -> Unit,
 ) {
     val mine = message.direction == Message.Direction.OUT
     val containerColor =
@@ -257,8 +267,10 @@ private fun MessageBubble(
                 Modifier
                     .widthIn(max = 480.dp)
                     .background(color = containerColor, shape = RoundedCornerShape(12.dp))
-                    .combinedClickable(onClick = {}, onLongClick = onLongPress)
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                    .onClick(
+                        matcher = PointerMatcher.mouse(PointerButton.Secondary),
+                        onClick = onContextMenu,
+                    ).padding(horizontal = 12.dp, vertical = 8.dp),
         ) {
             if (!mine) {
                 Text(
@@ -285,7 +297,12 @@ private fun MessageBubble(
                         color = textColor.copy(alpha = 0.7f),
                     )
                 } else {
-                    FileImage(path = path, width = att.width, height = att.height)
+                    FileImage(
+                        path = path,
+                        width = att.width,
+                        height = att.height,
+                        modifier = Modifier.clickable { onImageTap(path) },
+                    )
                 }
             }
             if (reactions.isNotEmpty()) {
@@ -308,10 +325,18 @@ private fun MessageBubble(
                     color = textColor.copy(alpha = 0.6f),
                 )
                 if (mine) {
+                    val faded = textColor.copy(alpha = 0.6f)
+                    val (statusText, statusColor) =
+                        when (message.status) {
+                            Message.Status.SENDING -> "Sending…" to faded
+                            Message.Status.DELIVERED -> "✓" to faded
+                            Message.Status.READ -> "✓✓" to MaterialTheme.colorScheme.primary
+                            Message.Status.FAILED -> "⚠ Not delivered" to MaterialTheme.colorScheme.error
+                        }
                     Text(
-                        text = message.status.name.lowercase(),
+                        text = statusText,
                         style = MaterialTheme.typography.labelSmall,
-                        color = textColor.copy(alpha = 0.6f),
+                        color = statusColor,
                     )
                 }
             }
@@ -349,7 +374,7 @@ private fun ReactionChips(
                 Row(
                     modifier =
                         Modifier
-                            .combinedClickable(onClick = { onToggle(emoji) }, onLongClick = {})
+                            .clickable(onClick = { onToggle(emoji) })
                             .padding(horizontal = 8.dp, vertical = 2.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
