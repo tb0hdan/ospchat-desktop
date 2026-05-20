@@ -28,6 +28,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.Call
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -66,6 +67,7 @@ fun ChatScreen(
     onSend: (String) -> Unit,
     onSendAttachment: (bytes: ByteArray) -> Unit,
     onReact: (Message, String?) -> Unit,
+    onCall: () -> Unit = {},
     onVisible: () -> Unit = {},
     onHidden: () -> Unit = {},
 ) {
@@ -99,13 +101,16 @@ fun ChatScreen(
                 localPath = avatarLocalPath,
                 size = 36.dp,
             )
-            Column {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(text = peer.nickname, style = MaterialTheme.typography.titleMedium)
                 Text(
                     text = "${peer.host}:${peer.port}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+            IconButton(onClick = onCall) {
+                Icon(Icons.Filled.Call, contentDescription = "Voice call")
             }
         }
         HorizontalDivider()

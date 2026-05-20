@@ -8,6 +8,7 @@ kotlinxDatetime = "0.6.1"
 ktor = "2.3.13"
 slf4j = "2.0.16"
 metadataExtractor = "2.19.0"
+webrtcJava = "0.14.0"
 
 [libraries]
 kotlinx-coroutines-swing = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-swing", version.ref = "kotlinxCoroutines" }
@@ -17,7 +18,11 @@ ktor-client-content-negotiation = { group = "io.ktor", name = "ktor-client-conte
 ktor-serialization-kotlinx-json = { group = "io.ktor", name = "ktor-serialization-kotlinx-json", version.ref = "ktor" }
 slf4j-nop = { group = "org.slf4j", name = "slf4j-nop", version.ref = "slf4j" }
 metadata-extractor = { group = "com.drewnoakes", name = "metadata-extractor", version.ref = "metadataExtractor" }
-ospchat-shared = { group = "com.ospchat", name = "ospchat-shared", version = "0.1.3" }
+ospchat-shared = { group = "com.ospchat", name = "ospchat-shared", version = "0.2.1" }
+# webrtc-java's main jar contains only the Java API. Native binaries live in
+# platform-classifier jars and must be added separately — see build.gradle.kts
+# for the host detection that picks the right classifier.
+webrtc-java = { group = "dev.onvoid.webrtc", name = "webrtc-java", version.ref = "webrtcJava" }
 
 [plugins]
 kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }

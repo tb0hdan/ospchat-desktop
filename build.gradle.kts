@@ -35,6 +35,33 @@ val macArch: String? = providers.gradleProperty("macArch").orNull
 val installerPackageName: String =
     if (macArch != null) "OSPChat-$macArch" else "OSPChat"
 
+// webrtc-java publishes platform-specific classifier jars (per-OS, per-arch)
+// containing the native libs. The main artifact is the API-only jar. Detect
+// host OS + arch at configure time so the build pulls in the matching native
+// jar for whichever machine is building — matches the existing release matrix
+// (Linux x86_64 / macOS x86_64 / macOS aarch64 / Windows x86_64) where each
+// runner only ever needs its own platform's natives.
+val webrtcJavaClassifier: String =
+    run {
+        val osNameLower = System.getProperty("os.name").lowercase()
+        val osArchLower = System.getProperty("os.arch").lowercase()
+        val os =
+            when {
+                osNameLower.contains("linux") -> "linux"
+                osNameLower.contains("mac") || osNameLower.contains("darwin") -> "macos"
+                osNameLower.contains("windows") -> "windows"
+                else -> error("Unsupported host OS for webrtc-java: $osNameLower")
+            }
+        val arch =
+            when {
+                osArchLower.contains("aarch64") || osArchLower.contains("arm64") -> "aarch64"
+                osArchLower.contains("amd64") || osArchLower.contains("x86_64") -> "x86_64"
+                osArchLower.contains("arm") -> "aarch32"
+                else -> error("Unsupported host arch for webrtc-java: $osArchLower")
+            }
+        "$os-$arch"
+    }
+
 // Developer ID signing for macOS is a no-op unless `-PmacSigningIdentity=...`
 // is passed (or ORG_GRADLE_PROJECT_macSigningIdentity is in the env). An
 // unsigned .dmg still installs and runs locally, but every relaunch
@@ -80,6 +107,11 @@ kotlin {
                 implementation(libs.ktor.serialization.kotlinx.json)
                 implementation(libs.slf4j.nop)
                 implementation(libs.metadata.extractor)
+                // libwebrtc JNI bindings. Two artifacts required: the Java
+                // API (`webrtc-java`) and the host-specific native jar
+                // (`webrtc-java:<classifier>`). See webrtcJavaClassifier above.
+                implementation(libs.webrtc.java)
+                implementation("${libs.webrtc.java.get().module}:${libs.versions.webrtcJava.get()}:$webrtcJavaClassifier")
             }
         }
     }
@@ -167,6 +199,8 @@ compose.desktop {
                         </array>
                         <key>NSLocalNetworkUsageDescription</key>
                         <string>OSPChat finds other OSPChat clients on your local network so you can chat directly, with no server in the middle.</string>
+                        <key>NSMicrophoneUsageDescription</key>
+                        <string>OSPChat uses your microphone for voice calls with other OSPChat users on your local network.</string>
                         """.trimIndent()
                 }
 

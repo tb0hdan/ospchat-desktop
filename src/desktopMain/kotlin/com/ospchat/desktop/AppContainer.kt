@@ -1,12 +1,15 @@
 package com.ospchat.desktop
 
 import com.ospchat.desktop.attachments.ExifAwareImageCompressor
+import com.ospchat.desktop.media.JvmAudioCallSessionFactory
+import com.ospchat.desktop.notifications.DesktopCallRinger
 import com.ospchat.desktop.notifications.DesktopMessageNotifier
 import com.ospchat.shared.data.attachments.AttachmentStore
 import com.ospchat.shared.data.attachments.FileAttachmentStore
 import com.ospchat.shared.data.attachments.ImageCompressor
 import com.ospchat.shared.data.avatar.AvatarStore
 import com.ospchat.shared.data.avatar.FileAvatarStore
+import com.ospchat.shared.data.calls.CallRepository
 import com.ospchat.shared.data.db.OspChatDatabase
 import com.ospchat.shared.data.db.ospChatDatabase
 import com.ospchat.shared.data.discovery.DiscoveryRepository
@@ -65,6 +68,11 @@ class AppContainer {
 
     val activeChatTracker = ActiveChatTracker()
     val messageNotifier = DesktopMessageNotifier(activeChatTracker)
+    val callRinger = DesktopCallRinger()
+
+    // --- Media (WebRTC) -----------------------------------------------------
+
+    val audioCallSessionFactory = JvmAudioCallSessionFactory()
 
     // --- Discovery ----------------------------------------------------------
 
@@ -182,6 +190,18 @@ class AppContainer {
         )
     }
 
+    val callRepository by lazy {
+        CallRepository(
+            dao = database.callDao(),
+            client = messageClient,
+            identityRepository = identityRepository,
+            discoveryRepository = discoveryRepository,
+            sessionFactory = audioCallSessionFactory,
+            notifier = callRinger,
+            peerDao = database.peerDao(),
+        )
+    }
+
     // --- Embedded HTTP server -----------------------------------------------
 
     val messageServer by lazy {
@@ -197,12 +217,14 @@ class AppContainer {
             groupMessageRepository = groupMessageRepository,
             groupRepository = groupRepository,
             groupSyncer = groupSyncer,
+            callRepository = callRepository,
         )
     }
 
     fun shutdown() {
         runCatching { messageServer.stop() }
         runCatching { peerDiscovery.stop() }
+        runCatching { audioCallSessionFactory.shutdown() }
         runCatching { http.close() }
         runCatching { database.close() }
     }

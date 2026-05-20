@@ -202,6 +202,34 @@ ospchat-desktop/
 
 ## Current status
 
+- 2026-05-20 — **Audio voice calls (phase 1, unreleased).** One-to-one LAN
+  voice calls between OSPChat peers, audio only. New phone icon in
+  `ChatScreen`'s top bar starts the call; `Screen.InCall` (new variant in
+  the sealed `Screen` enum) becomes the active screen and shows peer
+  avatar + state ("Calling…" / "Connecting…" / "Connected · m:ss") +
+  mute + hangup. Incoming calls render an `IncomingCallDialog` overlay
+  in `MainRoot` (above the existing `Screen.Main` dispatch, so it
+  appears over any current screen) — accept routes to `Screen.InCall`,
+  decline POSTs `/v1/call/hangup`. Both sides honour a 30s no-answer
+  ring timeout; second incoming call during an active call is
+  auto-rejected with `BUSY`. Media stack:
+  `dev.onvoid.webrtc:webrtc-java:0.14.0` (libwebrtc JNI bindings)
+  wrapped in `JvmAudioCallSession` / `JvmAudioCallSessionFactory` in
+  `media/`. Host OS+arch detection in `build.gradle.kts` picks the
+  matching per-platform classifier jar (linux-x86_64, linux-aarch64,
+  macos-aarch64, etc.) at build time — matches the existing release
+  matrix where each runner ships its own platform's natives.
+  `RTCPeerConnection` configured with empty ICE servers — LAN-only,
+  host candidates only. Signaling rides existing Ktor HTTP via 4 new
+  endpoints (`/v1/call/{offer,answer,ice,hangup}`) introduced in
+  `ospchat-shared:0.2.1`; media itself is UDP via libwebrtc.
+  `DesktopCallRinger` (implements shared `CallNotifier`) loops a
+  synthesized PCM 440 Hz ringtone via `javax.sound.sampled.Clip` (no
+  bundled WAV needed). macOS `Info.plist` extended with
+  `NSMicrophoneUsageDescription` so the TCC mic prompt renders.
+  `mavenLocal()` added to `settings.gradle.kts` for shared-module dev
+  cycles. Out of scope phase 1 (deferred): video, call history UI,
+  group calls, multiple concurrent calls, retry/reconnect, hold.
 - 2026-05-18 — Scaffolded the Gradle project (Compose Multiplatform 1.7.3,
   Kotlin 2.0.21, JVM 17 bytecode). Established the `AppContainer` + manual
   DI pattern; first window opened.

@@ -1,5 +1,6 @@
 package com.ospchat.desktop
 
+import com.ospchat.shared.data.calls.Call
 import com.ospchat.shared.data.discovery.Peer
 import com.ospchat.shared.util.Log
 import kotlinx.coroutines.CoroutineScope
@@ -227,6 +228,54 @@ class AppController(
                     container.messageRepository.sendReadReceipt(toPeer = peer, upToSentAt = nowMillis)
                 }.onFailure { Log.w(TAG, "sendReadReceipt failed", it) }
             }
+        }
+    }
+
+    // ---- Voice calls -------------------------------------------------------
+
+    /**
+     * Place an outbound voice call to [peer]. Fire-and-forget — the UI
+     * observes call state via `container.callRepository.activeCall` and
+     * navigates to the in-call screen as soon as the row appears.
+     * Invokes [onStarted] with the freshly-minted call id so the caller can
+     * push the in-call screen synchronously.
+     */
+    fun startCall(
+        peer: Peer,
+        onStarted: (String) -> Unit = {},
+    ) {
+        scope.launch {
+            runCatching {
+                val callId = container.callRepository.startCall(peer)
+                onStarted(callId)
+            }.onFailure { Log.w(TAG, "startCall failed", it) }
+        }
+    }
+
+    fun acceptCall(callId: String) {
+        scope.launch {
+            runCatching { container.callRepository.acceptCall(callId) }
+                .onFailure { Log.w(TAG, "acceptCall failed", it) }
+        }
+    }
+
+    fun hangUp(
+        callId: String,
+        reason: Call.EndReason = Call.EndReason.HANGUP,
+    ) {
+        scope.launch {
+            runCatching { container.callRepository.hangUp(callId, reason) }
+                .onFailure { Log.w(TAG, "hangUp failed", it) }
+        }
+    }
+
+    fun setCallMuted(
+        callId: String,
+        muted: Boolean,
+    ) {
+        scope.launch {
+            runCatching { container.callRepository.setMuted(callId, muted) }
+                .onFailure { Log.w(TAG, "setCallMuted failed", it) }
         }
     }
 

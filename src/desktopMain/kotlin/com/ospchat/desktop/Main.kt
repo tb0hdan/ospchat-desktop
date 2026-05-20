@@ -28,16 +28,19 @@ import androidx.compose.ui.window.isTraySupported
 import androidx.compose.ui.window.rememberTrayState
 import androidx.compose.ui.window.rememberWindowState
 import com.ospchat.desktop.ui.AboutScreen
+import com.ospchat.desktop.ui.CallScreen
 import com.ospchat.desktop.ui.ChatScreen
 import com.ospchat.desktop.ui.CreateGroupDialog
 import com.ospchat.desktop.ui.GroupChatScreen
 import com.ospchat.desktop.ui.GroupsScreen
+import com.ospchat.desktop.ui.IncomingCallDialog
 import com.ospchat.desktop.ui.MainShell
 import com.ospchat.desktop.ui.NicknameScreen
 import com.ospchat.desktop.ui.PeerInfoDialog
 import com.ospchat.desktop.ui.PeersScreen
 import com.ospchat.desktop.ui.Screen
 import com.ospchat.desktop.ui.Tab
+import com.ospchat.shared.data.calls.Call
 import com.ospchat.shared.data.groups.GroupMessage
 import com.ospchat.shared.data.messages.Message
 import com.ospchat.shared.data.peers.PeerRecord
@@ -250,9 +253,36 @@ private fun MainRoot(
                 onReact = { message, emoji ->
                     uiScope.launch { controller.reactToMessage(current.peer, message.id, emoji) }
                 },
+                onCall = {
+                    controller.startCall(current.peer) { callId ->
+                        screen = Screen.InCall(callId)
+                    }
+                },
                 onVisible = { controller.onPeerChatVisible(current.peer.uuid) },
                 onHidden = { controller.onPeerChatHidden(current.peer.uuid) },
             )
+        }
+
+        is Screen.InCall -> {
+            val activeCall by controller.container.callRepository.activeCall
+                .collectAsState(initial = null)
+            val call = activeCall
+            if (call != null && call.id == current.callId) {
+                CallScreen(
+                    call = call,
+                    onMuteToggle = { muted -> controller.setCallMuted(call.id, muted) },
+                    onHangUp = {
+                        controller.hangUp(call.id)
+                        screen = Screen.Main
+                    },
+                )
+            } else {
+                // The active call disappeared (remote hangup, ICE failure,
+                // no-answer timeout). Pop back to where the user was.
+                LaunchedEffect(current.callId, activeCall) {
+                    screen = Screen.Main
+                }
+            }
         }
 
         is Screen.GroupChat -> {
@@ -319,6 +349,26 @@ private fun MainRoot(
         info?.let { peerInfo ->
             PeerInfoDialog(info = peerInfo, onDismiss = { infoPeer = null })
         }
+    }
+
+    // Incoming-call overlay. Active whenever an incoming RINGING call exists
+    // and we're not already on the InCall screen for it (which only happens
+    // after the user accepts and the row transitions to CONNECTING).
+    val activeCall by controller.container.callRepository.activeCall
+        .collectAsState(initial = null)
+    val incoming =
+        activeCall?.takeIf {
+            it.direction == Call.Direction.INCOMING && it.state == Call.State.RINGING
+        }
+    incoming?.let { call ->
+        IncomingCallDialog(
+            call = call,
+            onAccept = {
+                controller.acceptCall(call.id)
+                screen = Screen.InCall(call.id)
+            },
+            onDecline = { controller.hangUp(call.id) },
+        )
     }
 
     if (showCreateGroup) {

@@ -8,6 +8,35 @@ semantic versioning.
 
 ### Added
 
+- **Audio-only voice calls (phase 1).** One-to-one LAN calls between OSPChat
+  peers, audio only (video deferred). Press the new phone icon in any chat's
+  top bar to place a call; an `IncomingCallDialog` overlay rings (synthesized
+  PCM tone via `javax.sound.sampled.Clip`) on the callee side. Accept opens
+  the new `Screen.InCall` full-screen UI with mute + hangup; decline / hangup
+  POSTs `/v1/call/hangup` and pops back. While a call is active a second
+  incoming call is auto-rejected with `BUSY`. Outbound ringing times out
+  after 30 s with `NO_ANSWER`. macOS `Info.plist` gains
+  `NSMicrophoneUsageDescription` so the TCC prompt renders correctly.
+
+  Media stack: `dev.onvoid.webrtc:webrtc-java:0.14.0` (libwebrtc JNI
+  bindings). Host detection in `build.gradle.kts` pulls in only the matching
+  per-platform classifier jar at build time (matches the existing release
+  matrix — each runner ships its own platform's natives). The shared
+  `AudioCallSession` interface is wrapped in `JvmAudioCallSession`;
+  `JvmAudioCallSessionFactory` holds the single shared `PeerConnectionFactory`
+  (heavy — owns libwebrtc's signaling / worker / network threads). ICE
+  servers are empty (host candidates only — LAN-only, no STUN/TURN).
+
+  Signaling rides the existing Ktor HTTP transport via four new endpoints
+  (`/v1/call/{offer,answer,ice,hangup}`) introduced in `ospchat-shared:0.2.0`;
+  media itself is UDP via libwebrtc.
+
+- **Local Maven repo in `settings.gradle.kts`.** Now lists `mavenLocal()` first
+  so `make publish-local` over in `../ospchat-shared` is picked up during
+  shared-module development cycles. The GitHub Packages copy still wins for
+  published versions because the Gradle resolver picks the highest matching
+  version regardless of repo order — `mavenLocal()` just adds a candidate.
+
 - **Reactions on group messages.** Right-click any group bubble (own or peer's)
   to open the emoji picker; the selected emoji becomes the user's reaction on
   that message. Chips appear under the body inside the bubble.

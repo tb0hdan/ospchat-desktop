@@ -10,6 +10,12 @@ pluginManagement {
 dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.PREFER_PROJECT)
     repositories {
+        // Local development: an unpublished `ospchat-shared` SNAPSHOT or
+        // staging version produced by `make publish-local` over in
+        // ../ospchat-shared can be picked up from here. Listed first so it
+        // wins over the GitHub Packages copy for any version that exists in
+        // both — important during shared-module development cycles.
+        mavenLocal()
         google()
         mavenCentral()
         maven("https://maven.pkg.jetbrains.space/public/p/compose/dev")
