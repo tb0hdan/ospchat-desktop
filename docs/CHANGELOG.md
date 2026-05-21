@@ -6,6 +6,26 @@ semantic versioning.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Desktop → Android calls stuck on "Connecting…".** Outbound calls from
+  Desktop to Android never moved past `Connecting…` (Android logcat showed
+  `ICE connection state: CHECKING` until ring timeout); Android → Desktop
+  worked. Root cause was in `ospchat-shared`'s `CallRepository.applyIce`:
+  the callee dropped every ICE candidate that arrived before the user
+  tapped Accept, because `current` was only created in `acceptCall`. A
+  multi-interface JVM desktop (loopback + eth + wifi + docker/vpn) emits
+  its entire host-candidate set immediately after `setLocalDescription`
+  — well before the Android user accepts — so Android ended up with the
+  answer SDP and zero remote candidates and ICE pairs stayed CHECKING
+  one-way. The reverse direction usually worked in practice because
+  Android has fewer interfaces and Desktop's user accepts faster. Fix
+  in `ospchat-shared:0.2.2`: `PendingOffer` buffers ICE candidates
+  while ringing and `acceptCall` drains them into the session after
+  `acceptOffer` sets the remote description. Wire-compatible — no
+  OpenAPI change. Desktop bumps its `ospchat-shared` pin in
+  `gradle/libs.versions.toml` from `0.2.1` to `0.2.2`.
+
 ### Added
 
 - **Audio-only voice calls (phase 1).** One-to-one LAN calls between OSPChat
