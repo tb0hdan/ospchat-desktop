@@ -3,7 +3,6 @@ package com.ospchat.desktop.ui
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Info
@@ -13,32 +12,31 @@ import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 
 /**
  * Tabbed shell — vertical NavigationRail on the left, content area on the right.
  * Three tabs match Android's bottom-tab shell: Contacts / Groups / About.
  *
- * [tab] is hoisted so the parent ([AppRoot]) can deep-link a tab from a
- * notification or menu action.
+ * The rail is now persistent chrome — visible on every screen, including
+ * Chat / GroupChat / InCall. The parent ([com.ospchat.desktop.MainKt]) wires
+ * every rail click to set the tab + pop the active sub-screen back to
+ * `Screen.Main`, so the rail doubles as a mid-Chat / mid-Call "return to the
+ * shell" affordance. The CallStatusBar lives above this composable so it
+ * keeps surfacing the active call once the user pops out of `Screen.InCall`.
  */
 @Composable
 fun MainShell(
-    selected: Tab,
-    onTabChange: (Tab) -> Unit,
-    content: @Composable (Tab) -> Unit,
+    selectedTab: Tab,
+    onTabClick: (Tab) -> Unit,
+    content: @Composable () -> Unit,
 ) {
     Row(modifier = Modifier.fillMaxSize()) {
         NavigationRail {
             Tab.entries.forEach { tab ->
                 NavigationRailItem(
-                    selected = tab == selected,
-                    onClick = { onTabChange(tab) },
+                    selected = tab == selectedTab,
+                    onClick = { onTabClick(tab) },
                     icon = {
                         Icon(
                             imageVector =
@@ -54,15 +52,8 @@ fun MainShell(
                 )
             }
         }
-        Box(modifier = Modifier.fillMaxSize().padding(start = 0.dp)) {
-            content(selected)
+        Box(modifier = Modifier.fillMaxSize()) {
+            content()
         }
     }
-}
-
-/** Convenience overload that owns the tab selection state. */
-@Composable
-fun MainShell(content: @Composable (Tab) -> Unit) {
-    var selected by remember { mutableStateOf(Tab.Contacts) }
-    MainShell(selected = selected, onTabChange = { selected = it }, content = content)
 }

@@ -185,6 +185,7 @@ ospchat-desktop/
     │       ├── NicknameScreen.kt              first-run prompt
     │       ├── PeersScreen.kt                 contacts + visible peers, right-click menu
     │       ├── PeerInfoDialog.kt              UUID / status / address + nickname history
+    │       ├── CallStatusBar.kt               global active-call banner (peer + status/duration + hangup)
     │       ├── ChatScreen.kt                  bubbles, reactions, image picker, emoji composer
     │       ├── GroupsScreen.kt                live group list + FAB
     │       ├── CreateGroupDialog.kt           name / kind / member picker
@@ -202,6 +203,81 @@ ospchat-desktop/
 
 ## Current status
 
+- 2026-05-21 — **unreleased**: fixed Android → Desktop calls hanging at
+  `Connecting…` (the reverse direction of the 2026-05-20 fix below).
+  Symptom: Desktop's call log showed `bufferedIce=0` on accept, no
+  `applyIce ←` arrived, and Desktop emitted only a single TCP-passive
+  host candidate before `NEGOTIATING` stalled until Android hung up.
+  Root cause in `media/JvmAudioCallSession.kt` (and mirrored on the
+  Android side): the local-ICE `MutableSharedFlow` was constructed
+  with `replay = 0` and `extraBufferCapacity = 64`. With `replay = 0`,
+  `tryEmit` against a flow with zero subscribers is silently discarded
+  — `extraBufferCapacity` only buffers for *existing slow subscribers*.
+  libwebrtc's signaling thread starts firing `onIceCandidate` the
+  instant `setLocalDescription` returns inside `createOffer` /
+  `acceptOffer`, well before `CallRepository.bindSession`'s
+  `scope.launch { collect { … } }` has scheduled its collector. Fast
+  gathering (1-2 interfaces on Android) loses every candidate; slow
+  gathering (4+ interfaces on Desktop) loses early ones but enough
+  late ones survive — hence the working Desktop → Android, broken
+  Android → Desktop. Fix: switch to `replay = 64`. No wire change.
+- 2026-05-21 — **unreleased**: bumped `ospchat-shared` to `0.2.4` for
+  detailed ICE / call-signaling logging. The shared `CallRepository` and
+  the `/v1/call/*` Ktor routes now log every offer, answer, ICE candidate
+  (local + remote), and call state transition with the `callId` for
+  cross-side correlation, plus the candidate string itself (so a
+  CHECKING-forever ICE case is diagnosable from logs without attaching a
+  debugger). Logging only; no wire / behavioural change. Used to diagnose
+  intermittent bidirectional ICE failures.
+- 2026-05-21 — **unreleased**: NavigationRail is now persistent chrome.
+  Previously it only lived inside `Screen.Main`; navigating into Chat /
+  GroupChat / InCall replaced the entire content area and the user lost
+  the tab switcher. The rail is now rendered at the top level of
+  `MainRoot` (in the same `Column` as the `CallStatusBar`), and clicking
+  any rail item from a sub-screen pops `screen` back to `Screen.Main`
+  with the clicked tab selected. On `Screen.InCall` specifically this
+  also reveals the `CallStatusBar` (which suppresses itself only on
+  `Screen.InCall`) — so the rail doubles as the "leave the full call UI
+  but keep the call running" affordance. `selectedTab` is hoisted out
+  of `MainShell` into `MainRoot` so it survives the Chat→Main
+  round-trip; `MainShell`'s new signature is
+  `(selectedTab, onTabClick, content: @Composable () -> Unit)` — the
+  parent now dispatches on `selectedTab` directly instead of receiving
+  it through the content slot, and the old `MainShell { tab -> … }`
+  convenience overload (which owned its own tab state) is gone.
+- 2026-05-21 — **unreleased**: collapse of `Screen.InCall` is now
+  fully user-driven. Earlier in this cycle a `LaunchedEffect(call.state)`
+  auto-popped to `Screen.Main` on `CONNECTED`; that's gone. The persistent
+  NavigationRail (also added this cycle) makes the explicit transition
+  natural: any rail click pops InCall→Main (revealing the
+  `CallStatusBar`), and the bar's `onClick` restores the full screen.
+  Hangup / remote teardown still pop via their existing branches. Also
+  swapped the bar's hangup IconButton for a plain Box+clickable at
+  28 dp with an 18 dp icon. The intermediate `.size(28.dp)` IconButton
+  attempt rendered at ~48 dp on screen because Material3 IconButton
+  applies `LocalMinimumInteractiveComponentSize` (48 dp touch target):
+  the size modifier only sized the red background, the layout slot
+  stayed at 48 dp and visually dominated the avatar / text. Box +
+  clickable bypasses the minimum-interactive enforcement entirely.
+- 2026-05-21 — **unreleased**: added a global call status bar
+  (`ui/CallStatusBar.kt`). Previously, once the user navigated off the
+  full-screen `Screen.InCall` there was no UI indication a call was active
+  and no in-app way to hang up without re-entering the call screen. The
+  new bar renders above the screen `when` in `MainRoot` whenever
+  `callRepository.activeCall` is non-null *and* the user isn't already on
+  `Screen.InCall`, showing the peer avatar + nickname, the live label /
+  duration (re-using shared `statusLabel(now)`), and a red hangup button.
+  Tapping the bar (outside the hangup) routes to `Screen.InCall` so the
+  user can return to the mute control. Implementation notes: wrapped the
+  existing `when (screen)` in a `Column { CallStatusBar; Box(weight(1f)) {
+  when … } }`; the weighted Box keeps `fillMaxSize()` in the child screens
+  working since Column otherwise hands its non-weighted children infinite
+  height. Consolidated `MainRoot`'s two `activeCall` `collectAsState`
+  observations (one at the top for the bar + InCall branch, the trailing
+  one for the incoming-call dialog) into a single declaration. The
+  incoming-RINGING case is still routed exclusively to `IncomingCallDialog`
+  — the bar suppresses itself in that state so the modal isn't competing
+  with a passive banner.
 - 2026-05-20 — **unreleased**: fixed Desktop → Android calls hanging at
   `Connecting…`. Symptom: Android logcat showed
   `D/JvmAudioCallSession: ICE connection state: CHECKING` and the call

@@ -46,13 +46,22 @@ class JvmAudioCallSession(
     private val _state = MutableStateFlow(AudioCallSession.State.NEW)
     override val state: StateFlow<AudioCallSession.State> = _state.asStateFlow()
 
-    // `replay = 0`, `extraBufferCapacity` so emit-from-callback never
-    // suspends inside the signaling thread (DROP_OLDEST is the wrong default
-    // for ICE — a dropped candidate is a dropped connectivity path — but
-    // 64 slots is far more than typical LAN ICE gathering produces).
+    // `replay = 64` (not `extraBufferCapacity`) because libwebrtc's
+    // signaling thread starts firing `onIceCandidate` the moment
+    // `setLocalDescription` returns — which is *inside* `createOffer` /
+    // `acceptOffer`, well before `CallRepository.bindSession` has scheduled
+    // its `scope.launch { collect { … } }`. With `replay = 0`, a
+    // `tryEmit` against a flow with zero subscribers is silently
+    // discarded (the `extraBufferCapacity` buffer only kicks in for
+    // existing slow subscribers); the first dozen-ish host candidates
+    // get dropped on the floor and one side ends up with no usable ICE.
+    // `replay = 64` preserves emissions for any future subscriber and
+    // is more than enough headroom for LAN ICE gathering (typically
+    // <10 candidates per session). `DROP_OLDEST` keeps tryEmit
+    // non-suspending on the signaling thread.
     private val iceFlow =
         MutableSharedFlow<AudioCallSession.IceCandidate>(
-            extraBufferCapacity = 64,
+            replay = 64,
             onBufferOverflow = BufferOverflow.DROP_OLDEST,
         )
     override val localIceCandidates: Flow<AudioCallSession.IceCandidate> = iceFlow.asSharedFlow()
