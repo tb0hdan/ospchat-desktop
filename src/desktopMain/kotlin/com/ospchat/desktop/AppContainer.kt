@@ -6,7 +6,9 @@ import com.ospchat.desktop.notifications.DesktopCallRinger
 import com.ospchat.desktop.notifications.DesktopMessageNotifier
 import com.ospchat.shared.data.attachments.AttachmentStore
 import com.ospchat.shared.data.attachments.FileAttachmentStore
+import com.ospchat.shared.data.attachments.ImageBounds
 import com.ospchat.shared.data.attachments.ImageCompressor
+import com.ospchat.shared.data.attachments.ImageIoImageBounds
 import com.ospchat.shared.data.avatar.AvatarStore
 import com.ospchat.shared.data.avatar.FileAvatarStore
 import com.ospchat.shared.data.calls.CallRepository
@@ -63,6 +65,7 @@ class AppContainer {
     val attachmentStore: AttachmentStore = FileAttachmentStore(parentDir = dataDir())
     val avatarStore: AvatarStore = FileAvatarStore(parentDir = dataDir())
     val imageCompressor: ImageCompressor = ExifAwareImageCompressor()
+    val imageBounds: ImageBounds = ImageIoImageBounds()
 
     // --- Notifications ------------------------------------------------------
 
@@ -121,6 +124,7 @@ class AppContainer {
             notifier = messageNotifier,
             attachmentStore = attachmentStore,
             attachmentCompressor = imageCompressor,
+            attachmentBounds = imageBounds,
         )
     }
 
@@ -180,6 +184,7 @@ class AppContainer {
             client = messageClient,
             peerDao = database.peerDao(),
             avatarStore = avatarStore,
+            avatarBounds = imageBounds,
         )
     }
 
