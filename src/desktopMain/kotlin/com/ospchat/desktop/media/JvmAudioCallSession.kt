@@ -2,6 +2,7 @@ package com.ospchat.desktop.media
 
 import com.ospchat.shared.media.AudioCallSession
 import com.ospchat.shared.media.AudioCallSessionFactory
+import com.ospchat.shared.turn.IceServerConfig
 import com.ospchat.shared.util.Log
 import dev.onvoid.webrtc.CreateSessionDescriptionObserver
 import dev.onvoid.webrtc.PeerConnectionFactory
@@ -10,6 +11,7 @@ import dev.onvoid.webrtc.RTCAnswerOptions
 import dev.onvoid.webrtc.RTCConfiguration
 import dev.onvoid.webrtc.RTCIceCandidate
 import dev.onvoid.webrtc.RTCIceConnectionState
+import dev.onvoid.webrtc.RTCIceServer
 import dev.onvoid.webrtc.RTCOfferOptions
 import dev.onvoid.webrtc.RTCPeerConnection
 import dev.onvoid.webrtc.RTCPeerConnectionState
@@ -42,6 +44,7 @@ import kotlin.coroutines.resumeWithException
  */
 class JvmAudioCallSession(
     factory: PeerConnectionFactory,
+    iceServers: List<IceServerConfig> = emptyList(),
 ) : AudioCallSession {
     private val _state = MutableStateFlow(AudioCallSession.State.NEW)
     override val state: StateFlow<AudioCallSession.State> = _state.asStateFlow()
@@ -74,7 +77,23 @@ class JvmAudioCallSession(
     private val peer: RTCPeerConnection =
         factory.createPeerConnection(
             RTCConfiguration().apply {
-                // iceServers stays empty — LAN host candidates only.
+                // Phase 3 multi-network bridging — populate iceServers with
+                // TURN entries fetched from the relay bridge (if any). Empty
+                // list (the default) preserves the original LAN-only,
+                // host-candidates-only behaviour.
+                if (iceServers.isNotEmpty()) {
+                    val targets = mutableListOf<RTCIceServer>()
+                    for (cfg in iceServers) {
+                        targets +=
+                            RTCIceServer().also {
+                                it.urls = listOf(cfg.uri)
+                                it.username = cfg.username
+                                it.password = cfg.credential
+                            }
+                    }
+                    this.iceServers = targets
+                    Log.d(TAG, "iceServers configured: ${targets.size} entries")
+                }
             },
             object : PeerConnectionObserver {
                 override fun onIceCandidate(candidate: RTCIceCandidate) {
@@ -205,7 +224,8 @@ class JvmAudioCallSessionFactory : AudioCallSessionFactory {
     // rather than at app startup. The first call will pay the load cost.
     private val factory: PeerConnectionFactory by lazy { PeerConnectionFactory() }
 
-    override fun create(): AudioCallSession = JvmAudioCallSession(factory)
+    override fun create(iceServers: List<IceServerConfig>): AudioCallSession =
+        JvmAudioCallSession(factory, iceServers)
 
     fun shutdown() {
         runCatching { factory.dispose() }

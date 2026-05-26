@@ -492,14 +492,17 @@ private fun AboutTab(
                 controller.container.avatarStore.selfExists(hash)
             }
         }
+    val relayEnabled by controller.relayEnabledFlow.collectAsState(initial = false)
     AboutScreen(
         nickname = nickname,
         selfUuid = selfUuid,
         selfAvatarPath = selfAvatarPath,
         boundPort = boundPort,
+        relayEnabled = relayEnabled,
         onRenameNickname = onRenameNickname,
         onPickAvatar = { bytes -> controller.setSelfAvatar(bytes) },
         onClearAvatar = { controller.clearSelfAvatar() },
+        onRelayEnabledChange = { controller.setRelayEnabled(it) },
         onExit = onExit,
     )
 }

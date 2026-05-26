@@ -184,7 +184,7 @@ private fun PeerRow(
                 }
             }
             Text(
-                text = "${peer.host}:${peer.port}",
+                text = peer.displayAddress(),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

@@ -18,7 +18,7 @@ ktor-client-content-negotiation = { group = "io.ktor", name = "ktor-client-conte
 ktor-serialization-kotlinx-json = { group = "io.ktor", name = "ktor-serialization-kotlinx-json", version.ref = "ktor" }
 slf4j-nop = { group = "org.slf4j", name = "slf4j-nop", version.ref = "slf4j" }
 metadata-extractor = { group = "com.drewnoakes", name = "metadata-extractor", version.ref = "metadataExtractor" }
-ospchat-shared = { group = "com.ospchat", name = "ospchat-shared", version = "0.2.7" }
+ospchat-shared = { group = "com.ospchat", name = "ospchat-shared", version = "0.2.8" }
 # webrtc-java's main jar contains only the Java API. Native binaries live in
 # platform-classifier jars and must be added separately — see build.gradle.kts
 # for the host detection that picks the right classifier.

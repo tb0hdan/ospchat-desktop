@@ -23,10 +23,14 @@ import com.ospchat.shared.data.groups.GroupSyncer
 import com.ospchat.shared.data.identity.IdentityRepository
 import com.ospchat.shared.data.identity.createIdentityDataStore
 import com.ospchat.shared.data.messages.MessageRepository
+import com.ospchat.shared.data.peers.GossipedPeerStore
 import com.ospchat.shared.data.peers.PeerAvatarSync
 import com.ospchat.shared.data.peers.PeerHistoryRecorder
 import com.ospchat.shared.data.peers.PeerInfoNotifier
 import com.ospchat.shared.data.peers.PeerRepository
+import com.ospchat.shared.data.peers.PeerRouter
+import com.ospchat.shared.data.peers.RelayBridgeRegistry
+import com.ospchat.shared.turn.OspChatTurnServer
 import com.ospchat.shared.data.reactions.ReactionRepository
 import com.ospchat.shared.domain.groups.GroupBroadcaster
 import com.ospchat.shared.domain.groups.LeaveGroupUseCase
@@ -82,13 +86,52 @@ class AppContainer {
     val peerDiscovery: PeerDiscoveryService = JmDnsPeerDiscovery()
     val discoveryRepository = DiscoveryRepository(peerDiscovery)
 
+    // --- Phase 4 multi-network bridging -------------------------------------
+    //
+    // GossipedPeerStore caches peers learned via /v1/info gossip from
+    // bridges. RelayBridgeRegistry remembers which directly-discovered
+    // peers advertised relayEnabled=true. PeerRouter combines them with
+    // the live discovery snapshot to resolve a target UUID to either a
+    // direct send (peer in discovery) or a bridged send (POST to a
+    // relay-enabled bridge with toUuid set to the final recipient).
+
+    val gossipedPeerStore = GossipedPeerStore()
+    val relayBridgeRegistry = RelayBridgeRegistry()
+
+    // --- Phase 3 multi-network bridging -------------------------------------
+    //
+    // Embedded TURN server for voice-call ICE relay. Runs only when the user
+    // has set relayEnabled=true (the existing phase-4 flag gates both message
+    // relay and voice relay). AppController owns the start/stop lifecycle.
+    // PR 2 wires the TurnCredentialService surface into /v1/call/relay-cred
+    // and CallRepository.fetchRelayIceServers.
+
+    val turnServer = OspChatTurnServer()
+    val peerRouter by lazy {
+        PeerRouter(
+            discoveryRepository = discoveryRepository,
+            gossipedPeerStore = gossipedPeerStore,
+            relayBridgeRegistry = relayBridgeRegistry,
+        )
+    }
+
     // --- Identity -----------------------------------------------------------
 
     val identityRepository = IdentityRepository(identityDataStore)
 
     // --- Network client -----------------------------------------------------
 
-    val messageClient = MessageClient(http = http, discoveryRepository = discoveryRepository)
+    val messageClient =
+        MessageClient(
+            http = http,
+            discoveryRepository = discoveryRepository,
+            // Phase 2b: every outbound DTO gets signed as soon as the
+            // keypair is loaded by AppController.start. The lambda hits
+            // IdentityRepository's cache on every call (cheap volatile
+            // read); returns null until the first ensureSigningKeyPair
+            // completes, at which point all subsequent sends are signed.
+            signingKeyProvider = { identityRepository.signingKeyPairOrNull() },
+        )
 
     // --- Repositories -------------------------------------------------------
 
@@ -101,6 +144,11 @@ class AppContainer {
             historyDao = database.peerHistoryDao(),
             historyRecorder = peerHistoryRecorder,
             discoveryRepository = discoveryRepository,
+            // Phase 4: lets toRecord compute "via <bridge-nickname>" and
+            // mark peers offline when the bridge route disappears.
+            peerRouter = peerRouter,
+            gossipedPeerStore = gossipedPeerStore,
+            relayBridgeRegistry = relayBridgeRegistry,
         )
     }
 
@@ -125,6 +173,11 @@ class AppContainer {
             attachmentStore = attachmentStore,
             attachmentCompressor = imageCompressor,
             attachmentBounds = imageBounds,
+            // Phase 4: PeerRouter enables sendToUuid(targetUuid, ...) to
+            // pick a bridge for cross-LAN sends. GossipedPeerStore lets
+            // receive() auto-create a PeerEntity for gossip-only senders.
+            peerRouter = peerRouter,
+            gossipedPeerStore = gossipedPeerStore,
         )
     }
 
@@ -185,6 +238,14 @@ class AppContainer {
             peerDao = database.peerDao(),
             avatarStore = avatarStore,
             avatarBounds = imageBounds,
+            // Phase 4: feed every /v1/info response into the gossip cache
+            // and relay-bridge registry. Without these, PeerRouter has
+            // nothing to route through.
+            gossipedPeerStore = gossipedPeerStore,
+            relayBridgeRegistry = relayBridgeRegistry,
+            // Phase 4 defence: filter self.uuid out of every inbound
+            // gossip list before it enters GossipedPeerStore.
+            identityRepository = identityRepository,
         )
     }
 
@@ -204,6 +265,13 @@ class AppContainer {
             sessionFactory = audioCallSessionFactory,
             notifier = callRinger,
             peerDao = database.peerDao(),
+            // Phase 3 multi-network bridging: speculative TURN cred prefetch
+            // from a relay-capable bridge before sessionFactory.create.
+            relayBridgeRegistry = relayBridgeRegistry,
+            // Phase 5 multi-network bridging: outbound call signaling DTOs
+            // route via PeerRouter — direct when target is in discovery,
+            // bridged with `toUuid` set when target is only in gossip.
+            peerRouter = peerRouter,
         )
     }
 
@@ -223,10 +291,24 @@ class AppContainer {
             groupRepository = groupRepository,
             groupSyncer = groupSyncer,
             callRepository = callRepository,
+            // Phase 4: forwarded to installMessageRoutes. messageClient
+            // becomes the relay forwarder when toUuid != self; the gossip
+            // store backs signer-pubkey lookup for relayed-in messages.
+            messageClient = messageClient,
+            gossipedPeerStore = gossipedPeerStore,
+            // Phase 4: lets /v1/info gossip carry each peer's avatarHash
+            // and lets /v1/peer-avatar/{uuid} serve the cached bytes for
+            // phantom-peer consumers across an unrouted LAN.
+            peerDao = database.peerDao(),
+            // Phase 3: backs POST /v1/call/relay-cred when this node is a
+            // bridge. Returns 503 relay_unavailable while the TURN server
+            // hasn't bound (i.e. relayEnabled=false at boot).
+            turnCredentialService = turnServer,
         )
     }
 
     fun shutdown() {
+        runCatching { turnServer.stop() }
         runCatching { messageServer.stop() }
         runCatching { peerDiscovery.stop() }
         runCatching { audioCallSessionFactory.shutdown() }

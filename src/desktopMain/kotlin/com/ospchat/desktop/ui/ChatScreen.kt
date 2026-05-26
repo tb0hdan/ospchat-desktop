@@ -104,7 +104,7 @@ fun ChatScreen(
             Column(modifier = Modifier.weight(1f)) {
                 Text(text = peer.nickname, style = MaterialTheme.typography.titleMedium)
                 Text(
-                    text = "${peer.host}:${peer.port}",
+                    text = peer.displayAddress(),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

@@ -112,7 +112,7 @@ fun CreateGroupDialog(
                                         style = MaterialTheme.typography.bodyMedium,
                                     )
                                     Text(
-                                        "${peer.host}:${peer.port}${if (!peer.isOnline) " · offline" else ""}",
+                                        peer.displayAddress() + if (!peer.isOnline) " · offline" else "",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )

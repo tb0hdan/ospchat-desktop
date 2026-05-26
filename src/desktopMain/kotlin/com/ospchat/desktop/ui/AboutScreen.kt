@@ -9,12 +9,15 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -40,9 +43,11 @@ fun AboutScreen(
     selfUuid: String,
     selfAvatarPath: String?,
     boundPort: Int,
+    relayEnabled: Boolean,
     onRenameNickname: (String) -> Unit,
     onPickAvatar: (ByteArray) -> Unit,
     onClearAvatar: () -> Unit,
+    onRelayEnabledChange: (Boolean) -> Unit,
     onExit: () -> Unit,
 ) {
     var draft by remember(nickname) { mutableStateOf(nickname) }
@@ -52,7 +57,11 @@ fun AboutScreen(
     var confirmExit by remember { mutableStateOf(false) }
 
     Column(
-        modifier = Modifier.fillMaxSize().padding(24.dp),
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Text(text = "About OSPChat", style = MaterialTheme.typography.titleLarge)
@@ -89,7 +98,7 @@ fun AboutScreen(
 
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             LabelValue("Desktop version", com.ospchat.desktop.BuildInfo.VERSION)
-            LabelValue("Wire API", "v1 (OpenAPI 0.9.0)")
+            LabelValue("Wire API", "v1 (OpenAPI 0.14.0)")
             LabelValue(
                 "Embedded server",
                 if (boundPort > 0) "port $boundPort" else "starting…",
@@ -120,6 +129,35 @@ fun AboutScreen(
                 modifier = Modifier.widthIn(min = 280.dp),
             )
             Button(onClick = { onRenameNickname(trimmed) }, enabled = dirty) { Text("Save") }
+        }
+
+        HorizontalDivider()
+
+        Text(
+            text = "Relay for contacts (messages + voice)",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Text(
+            text =
+                "When enabled, this desktop will forward signed messages and serve as " +
+                    "a TURN relay for voice calls between peers that can't reach each " +
+                    "other directly — useful when this machine is on multiple LANs that " +
+                    "aren't routed between each other. Messages and voice both stay " +
+                    "end-to-end encrypted: the relay sees encrypted envelopes / SRTP " +
+                    "datagrams only. Changes take effect on next restart.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Switch(checked = relayEnabled, onCheckedChange = onRelayEnabledChange)
+            Text(
+                text = if (relayEnabled) "Relay enabled" else "Relay disabled",
+                style = MaterialTheme.typography.bodyMedium,
+            )
         }
 
         HorizontalDivider()

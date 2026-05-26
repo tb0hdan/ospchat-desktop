@@ -2,6 +2,7 @@ package com.ospchat.desktop
 
 import com.ospchat.shared.data.calls.Call
 import com.ospchat.shared.data.discovery.Peer
+import com.ospchat.shared.util.Base64Util
 import com.ospchat.shared.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -43,13 +44,37 @@ class AppController(
         if (_running.value || nickname.isBlank()) return
         scope.launch {
             val uuid = container.identityRepository.ensureUuid()
+            // Phase 2a multi-network bridging: per-install Ed25519 keypair,
+            // pubkey is broadcast via mDNS TXT (pk=) and served from
+            // GET /v1/info for TOFU pinning. ensureSigningKeyPair persists
+            // the seed on first use and returns the same key on every call.
+            val publicKeyB64 =
+                runCatching {
+                    Base64Util.encode(
+                        container.identityRepository.ensureSigningKeyPair().publicKeyBytes(),
+                    )
+                }.getOrElse {
+                    Log.w(TAG, "ensureSigningKeyPair failed; starting without pubkey", it)
+                    null
+                }
             val preferredPort = container.identityRepository.lastServerPort() ?: 0
+            // Phase 4 multi-network bridging: read the user's relay opt-in
+            // and pass it into MessageServer.start. Flipping the toggle in
+            // About requires a restart to take effect.
+            val relayEnabled =
+                runCatching { container.identityRepository.currentRelayEnabled() }
+                    .getOrElse {
+                        Log.w(TAG, "currentRelayEnabled failed; defaulting to false", it)
+                        false
+                    }
             val port =
                 runCatching {
                     container.messageServer.start(
                         uuid = uuid,
                         nickname = nickname,
                         preferredPort = preferredPort,
+                        publicKeyB64 = publicKeyB64,
+                        relayEnabled = relayEnabled,
                     )
                 }.getOrElse {
                     Log.e(TAG, "MessageServer.start failed", it)
@@ -58,10 +83,128 @@ class AppController(
             _boundPort.value = port
             runCatching { container.identityRepository.setLastServerPort(port) }
                 .onFailure { Log.w(TAG, "setLastServerPort($port) failed", it) }
-            runCatching { container.peerDiscovery.start(nickname = nickname, uuid = uuid, port = port) }
-                .onFailure { Log.e(TAG, "PeerDiscovery.start failed", it) }
+            // Phase 3 multi-network bridging — start the embedded TURN
+            // server when the user has opted into relay. Bound on every
+            // non-loopback IPv4 interface (the server enumerates them
+            // itself, matching JmDnsPeerDiscovery.pickLocalAddresses).
+            // Flipping the toggle takes effect on next restart, same as
+            // the phase-4 MessageServer.start path.
+            if (relayEnabled) {
+                runCatching { container.turnServer.start() }
+                    .onFailure { Log.w(TAG, "TURN server start failed", it) }
+            }
+            // Phase 2b multi-network bridging: warm the discovery
+            // service's TOFU pubkey pin map from the persistent peer
+            // table BEFORE start(). This is what makes the F9 hijack
+            // defence survive a process restart — an attacker that
+            // wins the post-restart mDNS race with a different pubkey
+            // is rejected because we recognise the legitimate peer's
+            // pubkey from disk.
+            val persistedPins =
+                runCatching {
+                    container.database
+                        .peerDao()
+                        .loadPinnedPubkeys()
+                        .associate { it.uuid to it.pubKey }
+                }.getOrElse {
+                    Log.w(TAG, "loadPinnedPubkeys failed; starting without persistent pins", it)
+                    emptyMap()
+                }
+            container.peerDiscovery.preloadPinnedPubkeys(persistedPins)
+
+            // Phase 4 multi-network bridging cleanup: scrub any
+            // self-row that might have been written by an earlier
+            // gossip-collector bug (before the self-filter below was
+            // in place). Safe no-op if no such row exists.
+            runCatching {
+                val existed = container.database.peerDao().findByUuid(uuid) != null
+                container.database.peerDao().deleteByUuid(uuid)
+                Log.d(TAG, "self-row cleanup: existed=$existed deleted=true uuid=$uuid")
+            }.onFailure { Log.w(TAG, "deleteByUuid(self=$uuid) cleanup failed", it) }
+            runCatching {
+                container.peerDiscovery.start(
+                    nickname = nickname,
+                    uuid = uuid,
+                    port = port,
+                    publicKeyB64 = publicKeyB64,
+                )
+            }.onFailure { Log.e(TAG, "PeerDiscovery.start failed", it) }
             _running.value = true
-            Log.d(TAG, "started: uuid=$uuid nickname=$nickname port=$port (preferred=$preferredPort)")
+            Log.d(
+                TAG,
+                "started: uuid=$uuid nickname=$nickname port=$port (preferred=$preferredPort) " +
+                    "pk=${publicKeyB64?.take(16) ?: "<none>"} persistedPins=${persistedPins.size} " +
+                    "relayEnabled=$relayEnabled",
+            )
+
+            // Phase 4 multi-network bridging — persist gossiped peers as
+            // phantom PeerEntity rows so they show up in the contacts UI
+            // alongside directly-discovered peers. The phantom row has
+            // `lastHost = ""` (the gossip sentinel); outbound code (see
+            // `sendText`) detects this and routes through PeerRouter
+            // instead of attempting a direct connection.
+            //
+            // Gate on PeerRouter — gossip can reach us from a bridge whose
+            // `relayEnabled = false` (or that's offline), in which case
+            // we have no way to actually message the gossiped peer.
+            // Recording a phantom row in that state would surface a
+            // contact the user can never reach. Skip until a viable route
+            // appears; re-evaluation happens whenever gossip / discovery /
+            // the relay registry emits.
+            launch {
+                kotlinx.coroutines.flow
+                    .combine(
+                        container.gossipedPeerStore.peers,
+                        container.relayBridgeRegistry.bridges,
+                        container.discoveryRepository.peerSnapshot,
+                    ) { gossiped, _, _ -> gossiped }
+                    .collect { gossiped ->
+                        gossiped.values.forEach { gp ->
+                            // Defensive self-filter: never record a phantom
+                            // row for the local user's own UUID. The
+                            // server-side gossip filter in /v1/info should
+                            // already exclude us, but if a bridge bugs out
+                            // we don't want our own row leaking back into
+                            // the contacts list as "via bridge".
+                            if (gp.uuid == uuid) return@forEach
+                            val hasRoute = container.peerRouter.routeTo(gp.uuid)?.toUuid != null
+                            if (!hasRoute) return@forEach
+                            val phantom =
+                                com.ospchat.shared.data.discovery.Peer(
+                                    uuid = gp.uuid,
+                                    nickname = gp.nickname,
+                                    candidates =
+                                        listOf(
+                                            com.ospchat.shared.data.discovery.Endpoint(
+                                                host = "",
+                                                port = 0,
+                                            ),
+                                        ),
+                                    publicKey = gp.publicKey,
+                                )
+                            runCatching { container.peerRepository.recordSeen(phantom) }
+                                .onFailure { Log.w(TAG, "recordSeen(phantom ${gp.uuid}) failed", it) }
+                        }
+                    }
+            }
+
+            // Phase 4 multi-network bridging — periodic liveness probe.
+            // Android NSD (and JmDNS to a lesser extent) hangs onto stale
+            // mDNS records for hours when a peer goes down without
+            // sending an explicit goodbye, so peerSnapshot membership
+            // alone is not a reliable signal of bridge reachability.
+            // Every 30 s we re-pull /v1/info from each directly-discovered
+            // peer; PeerAvatarSync.sync drops the peer from
+            // RelayBridgeRegistry on failure, which collapses gossiped-
+            // via-that-bridge peers to offline in the UI.
+            launch {
+                while (true) {
+                    kotlinx.coroutines.delay(LIVENESS_PROBE_MS)
+                    container.discoveryRepository.peerSnapshot.value.values.forEach { peer ->
+                        launch { container.peerAvatarSync.sync(peer) }
+                    }
+                }
+            }
 
             // Persist every newly-seen peer (and their address/nickname history).
             container.discoveryRepository.peerSnapshot.collect { snapshot ->
@@ -75,7 +218,10 @@ class AppController(
 
     /**
      * Send a text message to [peer]. Fire-and-forget; UI observes status via
-     * the message flow.
+     * the message flow. Phase 4 multi-network bridging — when [peer]'s host
+     * is the gossip phantom sentinel (i.e. the target isn't directly
+     * discoverable), routes the send through the gossip-vouching relay
+     * bridge via [MessageRepository.sendToUuid].
      */
     fun sendText(
         peer: Peer,
@@ -83,7 +229,13 @@ class AppController(
     ) {
         if (body.isBlank()) return
         scope.launch {
-            container.messageRepository.send(peer = peer, body = body)
+            if (peer.host.isEmpty()) {
+                container.messageRepository
+                    .sendToUuid(targetUuid = peer.uuid, body = body)
+                    .onFailure { Log.w(TAG, "sendToUuid(${peer.uuid}) failed", it) }
+            } else {
+                container.messageRepository.send(peer = peer, body = body)
+            }
         }
     }
 
@@ -288,15 +440,40 @@ class AppController(
     }
 
     /**
-     * Persist [bytes] as the local user's custom avatar: SHA-256 hash, write
-     * the file via [AvatarStore.writeSelf], update IdentityRepository.avatarHash,
-     * cleanup any prior self-avatar files, then notify peers via /v1/notify-refresh.
+     * Phase 4 multi-network bridging — observe the user's relay opt-in
+     * flag. The About UI shows this as a toggle so the desktop user can
+     * choose to bridge messages between unrouted networks.
+     */
+    val relayEnabledFlow: kotlinx.coroutines.flow.Flow<Boolean> =
+        container.identityRepository.relayEnabledFlow
+
+    /**
+     * Phase 4 — flip the relay opt-in. Takes effect on next process
+     * restart (the route handler reads the flag at server start).
+     */
+    fun setRelayEnabled(enabled: Boolean) {
+        scope.launch {
+            runCatching { container.identityRepository.setRelayEnabled(enabled) }
+                .onFailure { Log.w(TAG, "setRelayEnabled($enabled) failed", it) }
+        }
+    }
+
+    /**
+     * Persist [bytes] as the local user's custom avatar. Compresses the
+     * picked image to [AVATAR_MAX_EDGE] pixels on the longest edge first
+     * — without this step the source resolution leaks through to other
+     * peers, which then reject the download because it exceeds their
+     * `ImageBounds.AVATAR_MAX_EDGE` cap. After compression: hash, write
+     * via [AvatarStore.writeSelf], update IdentityRepository.avatarHash,
+     * cleanup any prior self-avatar files, then notify peers via
+     * /v1/notify-refresh.
      */
     fun setSelfAvatar(bytes: ByteArray) {
         scope.launch {
             runCatching {
-                val hash = sha256Hex(bytes)
-                container.avatarStore.writeSelf(bytes = bytes, hash = hash)
+                val compressed = container.imageCompressor.compress(bytes, maxEdge = AVATAR_MAX_EDGE)
+                val hash = sha256Hex(compressed.bytes)
+                container.avatarStore.writeSelf(bytes = compressed.bytes, hash = hash)
                 container.avatarStore.cleanupSelfExcept(hash)
                 container.identityRepository.setAvatarHash(hash)
                 container.peerInfoNotifier.broadcastRefresh()
@@ -366,6 +543,24 @@ class AppController(
 
     private companion object {
         const val TAG = "AppController"
+
+        /**
+         * Max edge in pixels for the local user's avatar after upload-time
+         * compression. Matches the Android consumer's `AvatarRepository`
+         * value so both clients produce comparably-sized JPEGs, and sits
+         * well under `ImageBounds.AVATAR_MAX_EDGE = 1024` (the receiver's
+         * upper-bound cap) so peer-side validation never rejects.
+         */
+        const val AVATAR_MAX_EDGE = 256
+
+        /**
+         * Phase 4 multi-network bridging — interval between periodic
+         * liveness probes. 30 s strikes a balance between "fast enough
+         * for the UI to feel responsive when a bridge drops" and
+         * "rare enough that we don't flood the network with /v1/info
+         * fetches." Tunable.
+         */
+        const val LIVENESS_PROBE_MS = 30_000L
 
         /** Upper bound on how long we let the backend finish cleaning up. */
         const val SHUTDOWN_DEADLINE_MS = 800L
